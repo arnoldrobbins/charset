@@ -1,0 +1,187 @@
+.TH CHARSET 3 "October 31 2024" MinRX
+.SH NAME
+charset \(em store sets of characters and test against them
+.SH SYNOPSIS
+.ft CW
+.nf
+#inclde <stdio.h>
+#inclde <stdbool.h>
+#inclde "charset.h"
+
+typedef struct _charset charset_t;
+
+typedef enum {
+	CSET_NO_FLAGS = 0,	// no special cases
+	CSET_NO_NEWLINE = 0x01,	// \en not allowed in inverted range or "all chars"
+	// other flags may be added if needed
+} charset_flags_t;
+
+charset_t *charset_create(charset_flags_t flags, char *errbuf, size_t errbufsiz);
+
+bool charset_add_all_chars(charset_t *set, char *errbuf, size_t errbufsiz);
+bool charset_add_range(charset_t *set, wint_t start, wint_t end,
+                       char *errbuf, size_t errbufsiz);
+bool charset_add_char(charset_t *set, wint_t wc,
+                      char *errbuf, size_t errbufsiz);
+bool charset_add_cclass(charset_t *set, const char *cclass,
+                        char *errbuf, size_t errbufsiz);
+bool charset_add_equiv(charset_t *set, wint_t equiv,
+                       char *errbuf, size_t errbufsiz);
+bool charset_add_collate(charset_t *set, const wint_t *collate,
+                         char *errbuf, size_t errbufsiz);
+bool charset_invert(charset_t *set, char *errbuf, size_t errbufsiz);
+
+bool charset_in_set(charset_t *set, wint wc);
+
+void charset_dump(charset_t *set, FILE *fp);
+bool charset_free(charset_t *set, char *errbuf, size_t errbufsiz);
+.fi
+.ft R
+.SH DESCRIPTION
+.I Charset
+is a suite of functions for use in implementing a regular
+expression engine. In particular, it can be used to manage bracket expressions.
+The \f(CWcharset_t\fP type is purposely opaque; the provided functions
+manipulate the internals of the structure and test a character
+for membership in the set.
+.PP
+.I Charset
+works with wide characters (the C type \f(CWwint_t\fP). Typically these are
+Unicode code points but they don't have to be.
+It is the responsibility of the caller to ensure that all wide character
+values passed in to
+.I charset
+are valid in the current character set / locale.
+It is also the responsibility of the caller to deal with case (in)variance.
+I.e., the caller must separately add both upper- and lower-case variants of a character
+to the
+.I charset
+if that is the semantics that are needed (such as the \f(CWREG_ICASE\fP flag
+from
+.IR regex (3)).
+.PP
+The
+.I charset
+routines all accept a pointer to a buffer and the size of the
+buffer in which they return error messages if something should
+go wrong.
+The error messages will already have been translated by
+.IR gettext (3).
+.PP
+The functions are as follows:
+.TP
+\f(CWcharset_t *charset_create(charset_flags flags,\fP
+.PD 0
+.TP
+\f(CW                          char *errbuf, size_t errbufsiz);\fP
+Create a
+.I charset
+and return a pointer to it.  The \f(CWflags\fP value should be the bitwise-OR
+of one or more of the flag values shown above. Currently there is only one
+option, \f(CWCSET_NO_NEWLINE\fP, but others may be added in the future.
+Use \f(CWCSET_NO_FLAGS\fP if you don't wish to pass any flags.
+Returns non-\f(CWNULL\fP upon success or \f(CWNULL\fP if something went wrong.
+.PD
+.TP
+\f(CWbool charset_add_all_chars(charset_t *set,\fP
+.PD 0
+.TP
+\f(CW                           char *errbuf, size_t errbufsiz);\fP
+This adds all the characters between zero and \f(CW0x10ffff\fP (inclusive) to the set. It's
+intended for matching ``dot'' in a regular expression. The
+\f(CWCSET_NO_NEWLINE\fP flag affects this operation.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+.PD
+.TP
+\f(CWbool charset_add_range(charset_t *set, wint_t start, wint_t end,\fP
+.PD 0
+.TP
+\f(CW                       char *errbuf, size_t errbufsiz);\fP
+Add the characters in the range \f(CWstart\fP to \f(CWfinish\fP to the
+set. It should be the case that \f(CWstart\fP \(<= \f(CWfinish\fP.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+.PD
+.TP
+\f(CWbool charset_add_char(charset_t *set, wint_t wc,\fP
+.PD 0
+.TP
+\f(CW                      char *errbuf, size_t errbufsiz);\fP
+Add the character \f(CWwc\fP to the set.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+This function may be implemented as a macro.
+.PD
+.TP
+\f(CWbool charset_add_cclass(charset_t *set, const char *cclass,\fP
+.PD 0
+.TP
+\f(CW                        char *errbuf, size_t errbufsiz);\fP
+Add the given character class, \f(CWcclass\fP, to the set. This should be a string
+representing a supported character class, such as \f(CW"alpha"\fP.
+This should be a string
+.I without
+the enclosing \f(CW[:\fP and \f(CW:]\fP of regular expression syntax.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+.PD
+.TP
+\f(CWbool charset_add_equiv(charset_t *set, wint_t equiv,\fP
+.PD 0
+.TP
+\f(CW                       char *errbuf, size_t errbufsiz);\fP
+Add the given equivalence class \f(CWequiv\fP to the set. This should be a
+a single wide character.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+.PD
+.TP
+\f(CWbool charset_add_collate(charset_t *set, const wint_t *collate,\fP
+.PD 0
+.TP
+\f(CW                         char *errbuf, size_t errbufsiz);\fP
+Add the given collating sequence \f(CWcollate\fP
+(as a wide character string) to the set. This string should
+.I not
+have the enclosing \f(CW[.\fP and \f(CW.]\fP of regular expression syntax.
+In the current implementation, only the first wide character is used.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+.PD
+.TP
+\f(CWbool charset_invert(charset_t *set, char *errbuf, size_t errbufsiz);\fP
+Cause \f(CWcharset_in_set()\fP to return \f(CWtrue\fP if its given wide character is
+.I not
+in the set.
+This operation
+.I cannot
+be undone.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+.PD
+.TP
+\f(CWbool charset_in_set(charset_t *set, wint wc);\fP
+Returns \f(CWtrue\fP if \f(CWwc\fP is in the set, or \f(CWfalse\fP if something went wrong.
+.TP
+\f(CWvoid charset_dump(charset_t *set, FILE *fp);\fP
+Dump the internal data structures of \f(CWset\fP to \f(CWfp\fP.
+This is mainly for debugging and testing.
+.TP
+\f(CWbool charset_free(charset_t *set, char *errbuf, size_t errbufsiz);\fP
+Release the storage used by \f(CWset\fP.
+Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
+.PP
+It is possible to continue adding entities to a
+.I charset
+even after \f(CWcharset_in_set()\fP has been called,
+but it's unlikely that this is a good idea.
+.\" .SH EXAMPLE
+.SH "SEE ALSO"
+.IR gettext (3),
+.IR regex (3),
+.IR wctype (3),
+.B FIXME:
+Name of literate programming book with the code, and github link.
+.SH AUTHOR
+Arnold Robbins,
+.BR arnold@skeeve.com .
+.SH COPYING PERMISSIONS
+Copyright \(co 2023, 2024,
+Arnold David Robbins.
+.PP
+FIXME: LICENSE HERE
+.\" vim: set filetype=nroff :

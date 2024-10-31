@@ -1,0 +1,349 @@
+\input texinfo   @c -*-texinfo-*-
+@c vim: filetype=texinfo tabstop=4 shiftwidth=4
+@c %**start of header (This is for running Texinfo on a region.)
+@setfilename charset.info
+@settitle Efficient Searching of Large Character Sets --- Take Two
+@c %**end of header (This is for running Texinfo on a region.)
+
+@c Change how xref titles are quoted.
+@dquotexrefs
+@ifclear FORPRINT
+@pdflinkcolor
+@urllinkcolor
+@hideurls
+@end ifclear
+
+
+@c The following information should be updated here only!
+@c This sets the edition of the document.
+
+@c These apply across the board.
+@set UPDATE-MONTH October, 2024
+@set EDITION 0.1
+
+@set TITLE Efficient Searching of Large Character Sets --- Take Two
+@set SHORTTITLE Searching Character Sets
+
+@iftex
+@set DOCUMENT book
+@set CHAPTER chapter
+@set APPENDIX appendix
+@set SECTION section
+@set SUBSECTION subsection
+@end iftex
+@ifhtml
+@set DOCUMENT Web page
+@set CHAPTER chapter
+@set APPENDIX appendix
+@set SECTION section
+@set SUBSECTION subsection
+@end ifhtml
+@ifinfo
+@set DOCUMENT Info file
+@set CHAPTER major node
+@set APPENDIX major node
+@set SECTION minor node
+@set SUBSECTION node
+@end ifinfo
+@ifdocbook
+@set DOCUMENT book
+@set CHAPTER chapter
+@set APPENDIX appendix
+@set SECTION section
+@set SUBSECTION subsection
+@end ifdocbook
+
+@c some special symbols
+@ifnottex
+@macro ii{text}
+@i{\text\}
+@end macro
+@end ifnottex
+
+@c Uncomment this if you want the metafont logo.
+@ignore
+@ifnottex
+@macro MF{}
+@sc{METAFONT}
+@end macro
+@end ifnottex
+@end ignore
+
+@c merge the function and variable indexes into the concept index
+@c do so without the code font, and in the index entries do the
+@c font management ourselves.  Also merge in the chunk definition
+@c and reference entries, which jrweave creates for us.
+@ifnothtml
+@synindex fn cp
+@synindex vr cp
+@synindex cd cp
+@synindex cr cp
+@end ifnothtml
+
+@c If "finalout" is commented out, the printed output will show
+@c black boxes that mark lines that are too long.  Thus, it is
+@c unwise to comment it out when running a master in case there are
+@c overfulls which are deemed okay.
+
+@iftex
+@c @finalout
+@end iftex
+
+@copying
+@docbook
+<para>Published by:</para>
+
+<literallayout class="normal">Arnold David Robbins
+P.O. Box 354
+Nof Ayalon 9978500
+ISRAEL
+Email: <email>arnold@@skeeve.com</email>
+URL: <ulink url="https://www.skeeve.com/">https://www.skeeve.com/</ulink></literallayout>
+
+<literallayout class="normal">Copyright &copy; 2024
+Arnold David Robbins
+All Rights Reserved.</literallayout>
+@end docbook
+
+@ifnotdocbook
+Copyright @copyright{} 2024 @*
+Arnold David Robbins @*
+All Rights Reserved.
+@end ifnotdocbook
+@sp 1
+The charset program is copyright
+@copyright{} 2024 by Arnold David Robbins.
+@c It is published under the conditions of a BSD license yet to be determined.
+Not for publication, yet.
+@sp 2
+This is Edition @value{EDITION} of @cite{@value{TITLE}}.
+@end copying
+
+@c Uncomment this for the release.  Leaving it off saves paper
+@c during editing and review.
+@c @setchapternewpage odd
+
+@c Uncomment this if it's ever printed as a real book(let).
+@c @shorttitlepage @value{SHORTTITLE}
+
+@titlepage
+@title @value{TITLE}
+@subtitle @value{UPDATE-MONTH}
+@author Arnold David Robbins
+
+@ifnotdocbook
+@c Include the Distribution inside the titlepage environment so
+@c that headings are turned off.  Headings on and off do not work.
+
+@page
+@vskip 0pt plus 1filll
+Published by:
+@sp 1
+Arnold David Robbins @*
+P.O. Box 354 @*
+Nof Ayalon 9978500 @*
+ISRAEL @*
+Email: @EMAIL{arnold@@skeeve.com,arnold AT skeeve.com} @*
+URL: @url{https://www.skeeve.com/} @*
+
+@insertcopying
+@end ifnotdocbook
+@end titlepage
+
+@set DRAFT
+
+@iftex
+@headings off
+@evenheading @thispage @| @value{DRAFT} @| @strong{@value{SHORTTITLE}}
+@oddheading  @strong{@thischapter} @| @value{DRAFT} @| @thispage
+@end iftex
+
+@ifnottex
+@ifnotdocbook
+@ifnotxml
+@node Top
+@top General Introduction
+@c Preface node should come right after the Top
+@c node, in `unnumbered' sections, then the introductory chapter.
+@c Licensing nodes are appendices, they're not central to TexiWebJr.
+
+This file documents @code{charset}, a set of functions that accept
+a wide character value and search a defined set of characters to
+see if the value is in the set.  It is intended for use within
+a regular expression matching library.
+
+@insertcopying
+@end ifnotxml
+@end ifnotdocbook
+@end ifnottex
+
+@menu
+@detailmenu
+@end detailmenu
+@end menu
+
+@c @summarycontents
+@contents
+
+@c Add these to the menu if they ever get included.
+@c @node Foreword
+@c @unnumbered Foreword
+
+@node Preface
+@unnumbered Preface
+
+This @value{DOCUMENT} documents @code{charset}, a set of functions that accept
+a wide character value and search a defined set of characters to
+see if the value is in the set.  It is intended for use within
+a regular expression matching library.
+
+@menu
+* Audience::                    Who should read this @value{DOCUMENT}.
+* Conventions::                 Typographical conventions.
+* Acknowledgements::            Acknowledgements.
+@end menu
+
+@node Audience
+@unnumberedsec Intended Audience
+
+If you're interested in one way to search bracket expressions for
+a matching character value when using very large character sets
+(such as Unicode), you should read this @value{DOCUMENT}.
+
+@node Conventions
+@unnumberedsec Typographical Conventions
+
+@c Copied mostly verbatim from the gawk manual.
+
+@cindex Texinfo document formatting language
+This @value{DOCUMENT} is written in an enhanced version of
+@uref{https://www.gnu.org/software/texinfo/, Texinfo},
+the GNU documentation formatting language.
+A single Texinfo source file is used to produce both the printed and online
+versions of a program's documentation.
+@ifnotinfo
+Because of this, the typographical conventions
+are slightly different than in other books you may have read.
+@end ifnotinfo
+
+Examples you would type at the command-line are preceded by the common
+shell primary and secondary prompts, @samp{$} and @samp{>}.  Input that
+you type is shown @kbd{like this}.  Output from the command is preceded
+by the glyph ``@print{}''.  This typically represents the command's
+standard output.  Error messages, and other output on the command's
+standard error, are preceded by the glyph ``@error{}''.  For example:
+
+@example
+$ @kbd{echo hi on stdout}
+@print{} hi on stdout
+$ @kbd{echo hello on stderr 1>&2}
+@error{} hello on stderr
+@end example
+
+@ifnotinfo
+In the text, command names appear in @code{this font}, while code segments
+appear in the same font and quoted, @samp{like this}.  Options look
+like this: @option{-f}.  Some things are emphasized @emph{like this},
+and if a point needs to be made strongly, it is done @strong{like this}.
+The first occurrence of a new term is usually its @dfn{definition} and
+appears in the same font as the previous occurrence of ``definition''
+in this sentence.  Finally, file names are indicated like this:
+@file{/path/to/our/file}.
+@end ifnotinfo
+
+@node Acknowledgements
+@unnumberedsec Acknowledgements
+
+Thanks to Mike Haertel for his feedback, and for giving me the
+opportunity to write this bit of code.
+
+@node Introduction
+@chapter Introduction
+
+In the fall of 2023, Mike Haertel started writing a new regular expression library,
+@uref{https://github.com/mikehaertel/minrx, MinRX},
+with the aim of eventually replacing the matchers in use by GNU Awk
+(@command{gawk}).  The initial version is in C++; it will eventually be translated
+to C for portability. As of August 2024, it's working fully.
+
+As part of the discussion between Mike and myself, I offered a rough draft of a
+data structure to use for quickly seeing if a character matches a @dfn{bracket expression},
+which is a construct used within regular expressions to represent sets of different
+kinds of characters to be matched.
+The ideas for this data structure and how to use it had been bouncing around in
+my head for some time.
+
+I initially wrote a library---setsearch---that parsed bracket expressions,
+built the data structure, and then used it. It's still available at
+@uref{https://github.com/arnoldrobbins/setsearch}.  However, further discussion
+with Mike revealed that what he really needed was just a data structure for
+storing sets of characters and testing an input character against the set;
+he preferred to do his own parsing of the bracket expression, and add characters
+to the set as needed.
+
+As a result, I designed a new API that still uses the same underlying
+data structures. Thus, this @value{DOCUMENT} presents the design and
+implementation of a sublibrary (so to speak) for dealing with character
+sets.
+
+The machine-readable files are available from GitHub. The steps
+necessary to get them are:
+
+@example
+git clone https://github.com/arnoldrobbins/charset
+cd charset
+vim jrweave jrtangle    # or emacs :-). Set the path to gawk
+make
+@end example
+
+@noindent
+In order to format the document,
+you will need to have @TeX{} and Texinfo installed,
+including @command{texi2pdf}.  Or you can ask me for
+a PDF, if necessary.
+
+@node Next chapter
+@chapter Next Chapter Title
+
+@node First appendix
+@appendix First Appendix Title
+
+@node Code Chunk Summaries
+@appendix Code Chunk Summaries
+
+This @value{APPENDIX} presents alphabetical lists of
+all the file definitions, the code chunk definitions,
+and the code chunk references.
+
+@menu
+* File Definitions::          Source files by definition.
+* Code Chunk Definitions::    Code chunks by definition.
+* Code Chunk References::     Code chunks by reference.
+@end menu
+
+@node File Definitions
+@appendixsec Source File Definitions
+
+@print_file_defs
+
+@node Code Chunk Definitions
+@appendixsec Code Chunk Definitions
+
+@print_code_defs
+
+@node Code Chunk References
+@appendixsec Code Chunk References
+
+@print_code_refs
+
+@node Bibliography
+@unnumbered Bibliography
+
+@node Concept Index
+@unnumbered Index
+
+@printindex cp
+
+@bye
+
+TODO:

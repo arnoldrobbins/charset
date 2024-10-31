@@ -1,0 +1,7 @@
+2024-10-31         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Initial text.
+	* charset.3: Initial text.
+	* texinfo.tex: Texinfo macros
+	* jrweave, jrtange: Conversion programs.
+	* Makefile: Initial version.
