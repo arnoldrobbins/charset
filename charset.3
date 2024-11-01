@@ -1,4 +1,4 @@
-.TH CHARSET 3 "October 31 2024" MinRX
+.TH CHARSET 3 "November 1 2024" MinRX
 .SH NAME
 charset \(em store sets of characters and test against them
 .SH SYNOPSIS
@@ -165,10 +165,10 @@ This is mainly for debugging and testing.
 Release the storage used by \f(CWset\fP.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .PP
-It is possible to continue adding entities to a
+It is an error to attempt
+to continue adding entities to a
 .I charset
-even after \f(CWcharset_in_set()\fP has been called,
-but it's unlikely that this is a good idea.
+after \f(CWcharset_in_set()\fP has been called.
 .\" .SH EXAMPLE
 .SH "SEE ALSO"
 .IR gettext (3),
