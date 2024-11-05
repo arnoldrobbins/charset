@@ -302,8 +302,307 @@ you will need to have @TeX{} and Texinfo installed,
 including @command{texi2pdf}.  Or you can ask me for
 a PDF, if necessary.
 
-@node Next chapter
-@chapter Next Chapter Title
+@node The Data Structure
+@chapter The Underlying Data Structure
+
+We'll start with the underlying data structure and how
+it's searched, and then move on to how it's built
+and the API that manages it.
+
+A single item in the set is represented by
+a set item:
+
+@<data structures@>=
+typedef struct set_item {
+	enum set_item_type {
+		CTYPE_ITEM,
+		RANGE_ITEM,
+	} item_type;
+	union {
+		struct _ctype {
+			wctype_t    wtype;
+			const char *type_name;
+		} c;
+		struct _range {
+			int32_t start, end;
+		} r;
+	} u;
+} set_item;
+#define wtype		u.c.wtype
+#define type_name	u.c.type_name
+#define start		u.r.start
+#define end			u.r.end
+@
+
+A @code{set_item} holds one of two things:
+
+@itemize @bullet
+@item Information needed for use with the @code{iswctype()} function.
+This consists of a value of type @code{wctype_t}, and a pointer to
+a string representing the ctype.
+
+@item A range, such as @code{[a-z]}.
+Single characters that
+aren't contiguous with others are placed in a range where
+@code{start} and @code{end} are set to the same value.
+@end itemize
+
+The full @code{charset_t} holds a dynamically allocated
+array of @code{set_item}s, plus what's needed for managing
+the memory:
+
+@<data structures@>=
+struct _charset {
+	bool     complemented;      // For [^...] sets
+	bool     no_newlines;       // For dumping
+	bool     finalized;         // No more changes possible
+	size_t   nchars_used;       // Number of characters used
+	size_t   nchars_alloced;    // Number of characters allocated
+	wint_t   *chars;            // Characters added to the set
+	size_t   nelems;            // Number of elements in use
+	size_t   allocated;         // Number allocated.
+	set_item *items;            // Array of items
+};
+@
+
+@node The Easy Stuff
+@chapter The Easy Functions
+
+Let's get the easier functions out of the way.
+A fundamental assumption is that the array of items
+is sorted and uniqued. In addition, all @code{CTYPE_ITEM}s
+are at the front of the array, so that they can be tested
+first.
+
+@<API functions@>=
+/* charset_in_set --- see if a character is in the set */
+
+bool
+charset_in_set(const charset_t *set, int32_t the_char, int *errcode)
+{
+	@<check for NULL pointers@>
+	*errcode = CSET_SUCCESS;
+
+	if (! set->finalized)
+		finalize(set, errcode);
+
+	if (*errcode != CSET_SUCCESS)
+		return false;
+
+	if (the_char == L'\n' && set->no_newlines && set->complemented)
+		return false;
+
+	bool found = is_found(set, the_char);
+	if (set->complemented)
+		found = ! found;		// reverse sense of the match
+
+	return found;
+}
+
+/* charset_free --- free all storage */
+
+bool
+charset_free(const charset_t *set, int *errcode)
+{
+	@<check for NULL pointers@>
+
+	for (int i = 0; i < set->nelems; i++) {
+		if (set->items[i].item_type == CTYPE_ITEM)
+			free((void *) set->items[i].type_name);
+		else
+			break;
+	}
+
+	if (set->chars != NULL)
+		free((void *) set->chars);
+
+	free((void *) set->items);
+	free((void *) set);
+
+	*errcode = CSET_SUCCESS;
+	return true;
+}
+@
+
+@<check for NULL pointers@>=
+if (set == NULL) {
+	if (errcode != NULL)
+		*errcode = CSET_EBADPTR;
+	return false;
+}
+@
+
+@node Searching
+@section Searching For A Character
+
+The actual searching is separate from the ``is complemented'' test to
+keep things simple.
+
+@<helper functions@>=
+@<item comparison functions@>
+
+/* is_found --- return true if the character is found */
+
+static bool
+is_found(const charset_t *set, int32_t the_char)
+{
+	set_item *items = brack_expr->items;
+	int i;
+
+	@<Special case search for only one item in the set@>
+	@<Search for a @code{CTYPE_ITEM}@>
+	@<Search for a @code{RANGE_ITEM}@>
+}
+@
+
+The @code{CTYPE_ITEM}s are checked before the @code{RANGE_ITEM}s, since
+each one can match multiple characters with a single function call:
+
+@<Search for a @code{CTYPE_ITEM}@>=
+for (i = 0; i < set->nelems; i++) {
+	// linear search of ctype items
+	if (items[i].item_type == RANGE_ITEM)
+		break;
+
+	assert(items[i].item_type == CTYPE_ITEM);
+	if (iswctype(the_char, items[i].wtype))
+		return true;
+}
+
+if (i >= set->nelems)
+	return false;
+@
+
+Searching for a matching @code{RANGE_ITEM} is
+done using binary search:
+
+@<Search for a @code{RANGE_ITEM}@>=
+assert(set[i].item_type == RANGE_ITEM);
+
+// binary search to see if we have it
+set_item *found;
+set_item key;
+key.item_type = RANGE_ITEM;
+key.start = key.end = the_char;
+
+found = bsearch(& key, set + i, set->nelems - i,
+				sizeof(set_item), item_compare_for_searching);
+
+return found != NULL;
+@
+
+We need the header file for assertions:
+
+@<includes@>=
+#include <assert.h>
+@
+
+As a special case, if the set has only one character
+in it, we avoid the overhead of binary search:
+
+@<Special case search for only one item in the set@>=
+if (set->nelems == 1
+    && set->items[0].item_type == RANGE_ITEM
+    && set->items[0].start <= the_char
+	&& the_char <= set->items[0].end)
+	return true;
+@
+
+We need two comparison functions: one for use by @code{bsearch()} and
+a different one for use by by @code{qsort()}.  We
+want @code{CTYPE_ITEM}s to sort to the front of the list.  For sorting,
+we sort the @code{RANGE_ITEM}s based on their @code{start} value.
+For searching, we have to compare with the value in @code{key},
+and we will only be looking at @code{RANGE_ITEM}s.
+
+The comparisons are fundamentally different. When sorting,
+we're comparing array elements against each other. When
+searching, we compare elements one at a time against a key.
+The sorting comparison is more elaborate:
+
+@<item comparison functions@>=
+/* item_compare_for_sorting --- compare two set_items */
+
+static int
+item_compare_for_sorting(const void *l, const void *r)
+{
+	set_item *left = (set_item *) l;
+	set_item *right = (set_item *) r;
+
+	if (left->item_type == CTYPE_ITEM && right->item_type == CTYPE_ITEM) {
+		return left->wtype - right->wtype;
+	} else if (left->item_type == CTYPE_ITEM && right->item_type == RANGE_ITEM) {
+		return -1;
+	} else if (left->item_type == RANGE_ITEM && right->item_type == CTYPE_ITEM) {
+		return +1;
+	} else {
+		assert(left->item_type == RANGE_ITEM && right->item_type == RANGE_ITEM);
+		return left->start - right->start;
+	}
+}
+@
+
+The searching function is simpler.  POSIX tells us that the first
+argument is the key and the second is the array element being
+compared.
+
+@<item comparison functions@>=
+/* item_compare_for_searching --- compare two set_items */
+
+static int
+item_compare_for_searching(const void *k, const void *e)
+{
+	set_item *thekey = (set_item *) k;
+	set_item *elem = (set_item *) e;
+
+	assert(thekey->item_type == RANGE_ITEM && elem->item_type == RANGE_ITEM);
+
+	if (elem->start <= thekey->start && thekey->start <= elem->end)
+		return 0;	// found it
+	else if (thekey->end < elem->start)
+		return -1;
+	else {
+		assert(thekey->start > elem->end);
+		return 1;
+	}
+}
+@
+
+@node Printing
+@section Printing The Data Structure
+
+Printing the data is straightforward.
+
+@<API functions@>=
+/* charset_dump --- dump out the data structures */
+
+void
+charset_dump(const charset_t *set, FILE *fp)
+{
+	static const char *boolval[] = {
+		"false",
+		"true",
+	};
+
+	if (set == NULL || fp == NULL)
+		return;
+
+	fprintf(fp, "finalized = %s\n", boolval[!! set->finalized]);
+	fprintf(fp, "no_newlines = %s\n", boolval[!! set->no_newlines]);
+
+	set_item *items = set->items;
+	for (int i = 0; i < set->nelems; i++) {
+		if (items[i].item_type == CTYPE_ITEM) {
+			fprintf(fp, "%3d. CTYPE: [:%s:]\n", i, items[i].type_name);
+			continue;
+		}
+		assert(items[i].item_type == RANGE_ITEM);
+		fprintf(fp, "%3d. RANGE: start = L'%lc', end = L'%lc'\n",
+			i, items[i].start, items[i].end);
+	}
+	fflush(fp);
+}
+@
 
 @node First appendix
 @appendix First Appendix Title
