@@ -1,3 +1,8 @@
+2024-11-05         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.3: Updated again. Use error code instead
+	of strings.
+
 2024-11-01         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.3: Updated.
