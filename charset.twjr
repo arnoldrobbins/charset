@@ -18,7 +18,7 @@
 @c This sets the edition of the document.
 
 @c These apply across the board.
-@set UPDATE-MONTH October, 2024
+@set UPDATE-MONTH November, 2024
 @set EDITION 0.1
 
 @set TITLE Efficient Searching of Large Character Sets --- Take Two
@@ -285,6 +285,10 @@ As a result, I designed a new API that still uses the same underlying
 data structures. Thus, this @value{DOCUMENT} presents the design and
 implementation of a sublibrary (so to speak) for dealing with character
 sets.
+Almost all of the original setsearch code and literate
+documentation are reused here, but in a different way.
+In particular, the code for parsing a bracket expression will
+come in handy for the test program.
 
 The machine-readable files are available from GitHub. The steps
 necessary to get them are:
@@ -348,7 +352,8 @@ aren't contiguous with others are placed in a range where
 @end itemize
 
 The full @code{charset_t} holds a dynamically allocated
-array of @code{set_item}s, plus what's needed for managing
+array of @code{set_item}s, items needed for building
+the set, and what's needed for managing
 the memory:
 
 @<data structures@>=
@@ -358,10 +363,28 @@ struct _charset {
 	bool     finalized;         // No more changes possible
 	size_t   nchars_used;       // Number of characters used
 	size_t   nchars_alloced;    // Number of characters allocated
-	wint_t   *chars;            // Characters added to the set
+	int32_t  *chars;            // Characters added to the set
 	size_t   nelems;            // Number of elements in use
 	size_t   allocated;         // Number allocated.
 	set_item *items;            // Array of items
+};
+@
+
+@node Error Codes
+@chapter Error Codes
+
+Almost all of the functions return a success or error value via a
+pointer to a plain integer. Here are the error codes:
+
+@<error codes@>=
+// error code values:
+enum {
+	CSET_SUCCESS = 0,		// no problems
+	CSET_EBADPTR,		// NULL pointer received
+	CSET_EFROZEN,		// Cannot add more characters to the set
+	CSET_ECOLLATE,		// corresponds to REG_ECOLLATE
+	CSET_ECTYPE,		// corresponds to REG_ECTYPE
+	CSET_ESPACE,		// corresponds to REG_ESPACE
 };
 @
 
@@ -430,6 +453,11 @@ if (set == NULL) {
 		*errcode = CSET_EBADPTR;
 	return false;
 }
+@
+
+@<API declarations@>=
+bool charset_in_set(const charset_t *set, int32_t the_char, int *errcode);
+bool charset_free(const charset_t *set, int *errcode);
 @
 
 @node Searching
@@ -602,6 +630,64 @@ charset_dump(const charset_t *set, FILE *fp)
 	}
 	fflush(fp);
 }
+@
+
+@<API declarations@>=
+void charset_dump(const charset_t *set, FILE *fp);
+@
+
+@node Creating The Charset
+@chapter Creating The Charset
+
+@<API functions@>=
+/* charset_create --- make a new charset_t and initialize it */
+
+charset_t *
+charset_create(charset_flags_t flags, int *errcode)
+{
+	if (errcode == NULL)
+		return false;
+
+	charset_t *set = (charset_t *) malloc(sizeof(charset_t));
+	if (set == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+
+	memset(set, 0, sizeof(charset_t));
+
+	*errcode = CSET_SUCCESS;
+	return true;
+}
+@
+
+@<API declarations@>=
+charset_t *charset_create(charset_flags_t flags, int *errcode);
+@
+
+
+@node Adding A Character
+@chapter Adding A Character
+
+@<API functions@>=
+bool
+charset_add_char(charset_t *set, int32_t wc, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+}
+@
+
+
+@<check if finalized@>=
+if (set->finalized) {
+	*errcode = CSET_EFROZEN;
+	return false;
+}
+@
+
+@<API declarations@>=
+bool charset_add_char(charset_t *set, int32_t wc, int *errcode);
 @
 
 @node First appendix

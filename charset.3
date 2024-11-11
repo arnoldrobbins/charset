@@ -1,4 +1,4 @@
-.TH CHARSET 3 "November 5 2024" MinRX
+.TH CHARSET 3 "November 10 2024" MinRX
 .SH NAME
 charset \(em store sets of characters and test against them
 .SH SYNOPSIS
@@ -6,6 +6,7 @@ charset \(em store sets of characters and test against them
 .nf
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include "charset.h"
 
 typedef struct _charset charset_t;
@@ -29,19 +30,19 @@ enum {
 charset_t *charset_create(charset_flags_t flags, int *errcode);
 
 bool charset_add_all_chars(charset_t *set, int *errcode);
-bool charset_add_range(charset_t *set, wint_t start, wint_t end,
+bool charset_add_range(charset_t *set, int32_t start, int32_t end,
                        int *errcode);
-bool charset_add_char(charset_t *set, wint_t wc,
+bool charset_add_char(charset_t *set, int32_t wc,
                       int *errcode);
 bool charset_add_cclass(charset_t *set, const char *cclass,
                         int *errcode);
-bool charset_add_equiv(charset_t *set, wint_t equiv,
+bool charset_add_equiv(charset_t *set, int32_t equiv,
                        int *errcode);
-bool charset_add_collate(charset_t *set, const wint_t *collate,
+bool charset_add_collate(charset_t *set, const int32_t *collate,
                          int *errcode);
 bool charset_invert(charset_t *set, int *errcode);
 
-bool charset_in_set(charset_t *set, wint wc, int *errcode);
+bool charset_in_set(charset_t *set, int32_t wc, int *errcode);
 
 void charset_dump(const charset_t *set, FILE *fp);
 bool charset_free(const charset_t *set, int *errcode);
@@ -56,7 +57,7 @@ manipulate the internals of the structure and test a character
 for membership in the set.
 .PP
 .I Charset
-works with wide characters (the C type \f(CWwint_t\fP). Typically these are
+works with wide characters (the C type \f(CWint32_t\fP). Typically these are
 Unicode code points but they don't have to be.
 It is the responsibility of the caller to ensure that all wide character
 values passed in to
@@ -92,7 +93,7 @@ intended for matching ``dot'' in a regular expression. The
 \f(CWCSET_NO_NEWLINE\fP flag affects this operation.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .TP
-\f(CWbool charset_add_range(charset_t *set, wint_t start, wint_t end,\fP
+\f(CWbool charset_add_range(charset_t *set, int32_t start, int32_t end,\fP
 .PD 0
 .TP
 \f(CW                       int *errcode);\fP
@@ -101,7 +102,7 @@ set. It should be the case that \f(CWstart\fP \(<= \f(CWfinish\fP.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .PD
 .TP
-\f(CWbool charset_add_char(charset_t *set, wint_t wc, int *errcode);\fP
+\f(CWbool charset_add_char(charset_t *set, int32_t wc, int *errcode);\fP
 Add the character \f(CWwc\fP to the set.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 This function may be implemented as a macro.
@@ -119,13 +120,13 @@ the enclosing \f(CW[:\fP and \f(CW:]\fP of regular expression syntax.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .PD
 .TP
-\f(CWbool charset_add_equiv(charset_t *set, wint_t equiv, int *errcode);\fP
+\f(CWbool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode);\fP
 Add the given equivalence class \f(CWequiv\fP to the set. This should be a
 a single wide character.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .PD
 .TP
-\f(CWbool charset_add_collate(charset_t *set, const wint_t *collate,\fP
+\f(CWbool charset_add_collate(charset_t *set, const int32_t *collate,\fP
 .PD 0
 .TP
 \f(CW                         int *errcode);\fP
@@ -148,7 +149,7 @@ This operation
 be undone.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .TP
-\f(CWbool charset_in_set(charset_t *set, wint wc, int *errcode);\fP
+\f(CWbool charset_in_set(charset_t *set, int32_t wc, int *errcode);\fP
 Returns \f(CWtrue\fP if \f(CWwc\fP is in the set, or \f(CWfalse\fP if something went wrong.
 .TP
 \f(CWvoid charset_dump(const charset_t *set, FILE *fp);\fP
