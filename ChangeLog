@@ -1,3 +1,8 @@
+2024-11-11         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Add basic implementation of API functions.
+	Still lots to do, including the finalizing.
+
 2024-11-05         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.3: Updated again. Use error code instead

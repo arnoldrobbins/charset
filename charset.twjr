@@ -361,8 +361,8 @@ struct _charset {
 	bool     complemented;      // For [^...] sets
 	bool     no_newlines;       // For dumping
 	bool     finalized;         // No more changes possible
-	size_t   nchars_used;       // Number of characters used
-	size_t   nchars_alloced;    // Number of characters allocated
+	size_t   nchars_inuse;      // Number of characters used
+	size_t   nchars_allocated;  // Number of characters allocated
 	int32_t  *chars;            // Characters added to the set
 	size_t   nelems;            // Number of elements in use
 	size_t   allocated;         // Number allocated.
@@ -409,7 +409,7 @@ charset_in_set(const charset_t *set, int32_t the_char, int *errcode)
 	if (! set->finalized)
 		finalize(set, errcode);
 
-	if (*errcode != CSET_SUCCESS)
+	if (*errcode != CSET_SUCCESS)	// finalize() failed
 		return false;
 
 	if (the_char == L'\n' && set->no_newlines && set->complemented)
@@ -446,6 +446,8 @@ charset_free(const charset_t *set, int *errcode)
 	return true;
 }
 @
+
+We check for @code{NULL} pointers in every function:
 
 @<check for NULL pointers@>=
 if (set == NULL) {
@@ -636,8 +638,26 @@ charset_dump(const charset_t *set, FILE *fp)
 void charset_dump(const charset_t *set, FILE *fp);
 @
 
+@node API Functions
+@chapter API Functions
+
+Here are the functions for the API.
+
 @node Creating The Charset
-@chapter Creating The Charset
+@section Creating The Charset
+
+Creating the character set simply
+allocates the memory and forces it to zero.
+Then we check the flags.
+
+@<API declarations@>=
+typedef enum {
+	CSET_NO_FLAGS = 0,	// no special cases
+	CSET_NO_NEWLINE = 0x01,	// \en not allowed in inverted range or "all chars"
+	// other flags may be added if needed
+} charset_flags_t;
+@
+
 
 @<API functions@>=
 /* charset_create --- make a new charset_t and initialize it */
@@ -646,18 +666,21 @@ charset_t *
 charset_create(charset_flags_t flags, int *errcode)
 {
 	if (errcode == NULL)
-		return false;
+		return NULL;
 
 	charset_t *set = (charset_t *) malloc(sizeof(charset_t));
 	if (set == NULL) {
 		*errcode = CSET_ESPACE;
-		return false;
+		return NULL;
 	}
 
 	memset(set, 0, sizeof(charset_t));
 
+	if ((flags & CSET_NO_NEWLINE) != 0)
+		set->no_newlines = true;
+
 	*errcode = CSET_SUCCESS;
-	return true;
+	return set;
 }
 @
 
@@ -665,16 +688,23 @@ charset_create(charset_flags_t flags, int *errcode)
 charset_t *charset_create(charset_flags_t flags, int *errcode);
 @
 
-
 @node Adding A Character
-@chapter Adding A Character
+@section Adding A Character
 
 @<API functions@>=
+/* charset_add_char --- add a single wide character to the set */
+
 bool
 charset_add_char(charset_t *set, int32_t wc, int *errcode)
 {
 	@<check for NULL pointers@>
 	@<check if finalized@>
+
+	@<create or grow the array of wide characters@>
+
+	set->chars[set->nchars_inuse++] = wc;
+	set->chars[set->nchars_inuse] = L'\0';	// make it into a string
+	return true;
 }
 @
 
@@ -686,9 +716,305 @@ if (set->finalized) {
 }
 @
 
+@<create or grow the array of wide characters@>=
+if (set->chars == NULL) {
+	set->chars = (int32_t *) malloc(sizeof(int32_t * 10));
+	if (set->chars == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	set->nchars_allocated = 10;
+	set->nchars_inuse = 0;
+} else if (set->nchars_inuse + 1 >= set->nchars_allocated) {
+	int new_amount = set->nchars_allocated * 2;
+	int32_t *new_data = (int32_t *) realloc(set->chars, new_amount * sizeof(int32_t));
+
+	if (new_data == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	memset(new_data + set->nchars_allocated, 0, set->nchars_allocated * sizeof(int32_t));
+	set->nchars_allocated = new_amount;
+	set->chars = new_data;
+}
+@
+
 @<API declarations@>=
 bool charset_add_char(charset_t *set, int32_t wc, int *errcode);
 @
+
+@node Adding Ranges
+@section Adding Ranges
+
+@<API functions@>=
+/* charset_add_range --- add a range item */
+
+bool
+charset_add_range(charset_t *set, int32_t start, int32_t end, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	@<create or grow the set of items if necessary@>
+
+	set_item new_item;
+	new_item.item_type = RANGE_ITEM;
+	new_item.start = first;
+	new_item.end = last;
+	set->items[set->nelems++] = new_item;
+
+	return true;
+}
+@
+
+@<create or grow the set of items if necessary@>=
+if (set->items == NULL) {
+	set->items = (set_item *) malloc(sizeof(set_item * 10));
+	if (set->items == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	set->allocated = 10;
+	set->nelems = 0;
+} else if (set->nelems + 1 >= set->allocated) {
+	int new_amount = set->allocated * 2;
+	set_item *new_data = (set_item *) realloc(set->items, new_amount * sizeof(set_item));
+
+	if (new_data == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	memset(new_data + set->allocated, 0, set->allocated * sizeof(set_item));
+	set->allocated = new_amount;
+	set->items = new_data;
+}
+@
+
+@<API functions@>=
+/* charset_add_all_chars --- make a range with all possible characters */
+
+bool
+charset_add_all_chars(charset_t *set, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	if (set->no_newlines) {
+		if (! charset_add_range(set, 0, L'\n' - 1, errcode))
+			return false;
+		if (! charset_add_range(set, L'\n' + 1, 0x10ffff, errcode))
+			return false;
+	} else {
+		if (! charset_add_range(set, 0, 0x10ffff, errcode))
+			return false;
+	}
+
+	return true;
+}
+@
+
+@<API declarations@>=
+bool charset_add_range(charset_t *set, int32_t start, int32_t end, int *errcode);
+bool charset_add_all_chars(charset_t *set, int *errcode);
+@
+
+@node Inverting
+@section Inverting The Charset
+
+
+@<API functions@>=
+bool charset_invert(charset_t *set, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	set->inverted = true;
+	return true;
+}
+@
+
+@<API declarations@>=
+bool charset_invert(charset_t *set, int *errcode);
+@
+
+@node The Funky Stuff
+@chapter Character Classes, Equivalence Classes, and Collating Sequences
+
+@node Character Classes
+@section  Character Classes
+
+@<API functions@>=
+bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	@<create or grow the set of items if necessary@>
+
+	wctype_t the_type = wctype(cclass);
+	if (the_type == 0) {	// not a known class name
+		*errcode = CSET_ECTYPE;
+		return false;
+	}
+
+	const char *class_name = strdup(cclass);
+	if (class_name == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	set_item new_item;
+	new_item.item_type = CTYPE_ITEM;
+
+	new_item.wtype = the_type;
+	new_item.type_name = class_name;
+	set->items[set->nelems++] = new_item;
+
+	return true;
+}
+@
+
+@<API declarations@>=
+bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode);
+@
+
+@node Equivalence Classes
+@section Equivalence Classes
+
+Here is Mike's portable but ``sleazy'' (sic) way to add all
+the equivalent characters:
+
+@<API functions@>=
+bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	wchar_t wcs_in[2];
+	wchar_t wcs[2];
+	wchar_t abuf[100], wbuf[100];
+
+	wcs_in[0] = equiv;
+	wcs_in[1] = 0;
+	wcsxfrm(abuf, wcs_in, 99);
+	wcs[1] = 0;
+	for (wchar_t u = 1; u < 0x110000; ++u) {
+		wcs[0] = u;
+		wcsxfrm(wbuf, wcs, 99);
+		if (abuf[0] == wbuf[0])
+			if (! charset_add_char(set, u, errcode))
+				return false;
+	}
+
+	return true;
+}
+@
+
+@<API declarations@>=
+bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode);
+@
+
+@node Collating Sequences
+@section  Collating Sequences
+
+@<API functions@>=
+bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	// only single character collating sequences allowed,
+	// at least right now
+	if (collate[1] != L'\0') {
+		*errcode = CSET_ECOLLATE;
+		return false;
+	}
+
+	return charset_add_char(set, collate[0], errcode);
+}
+@
+
+@<API declarations@>=
+bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode);
+@
+
+@node Finalizing
+@chapter Finalizing The Charset
+
+@node Source Files
+@section Source Files
+
+@(charset.h@)=
+#ifndef CHARSET_H
+#define CHARSET_H 1
+
+@<Copyright statement@>
+
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct _charset charset_t;
+
+@<error codes@>
+@<API declarations@>
+
+#ifdef __cplusplus
+}
+#endif
+#endif /* CHARSET_H */
+@
+
+@(charset.c@)=
+@<Copyright statement@>
+
+@<includes@>
+#include "charset.h"	// for the charset_t typedef
+@<deal with @code{gettext()}@>
+
+@<data structures@>
+@<helper functions@>
+@<API functions@>
+@
+
+To get it out of the way, here is the copyright statement.
+
+@<Copyright statement@>=
+// Copyright (C) 2024, Arnold David Robbins.
+// All rights reserved.  Not for redistribution (yet...).
+@
+
+We include the standard header files that we'll need:
+
+@<includes@>=
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+//#include <stdlib.h>
+#include <string.h>
+@
+
+Since we want the error messages to be translatable,
+we have deal with @code{gettext()}:
+
+@<deal with @code{gettext()}@>=
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
+#ifdef HAVE_GETTEXT_H
+#include "gettext.h"
+#define _(x) gettext(x)
+#else
+#define _(x) x
+#endif
+@
+
+@node Test Program
+@chapter A Test Program
 
 @node First appendix
 @appendix First Appendix Title
