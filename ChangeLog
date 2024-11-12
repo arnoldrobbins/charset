@@ -1,3 +1,8 @@
+2024-11-12         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Almost all the coding done. Need to finish
+	the test program.
+
 2024-11-11         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Add basic implementation of API functions.

@@ -1,4 +1,4 @@
-.TH CHARSET 3 "November 10 2024" MinRX
+.TH CHARSET 3 "November 12 2024" MinRX
 .SH NAME
 charset \(em store sets of characters and test against them
 .SH SYNOPSIS
@@ -25,12 +25,13 @@ enum {
 	CSET_ECOLLATE,		// corresponds to REG_ECOLLATE
 	CSET_ECTYPE,		// corresponds to REG_ECTYPE
 	CSET_ESPACE,		// corresponds to REG_ESPACE
+	CSET_ERANGE,		// Corresponds to REG_ERANGE
 };
 
 charset_t *charset_create(charset_flags_t flags, int *errcode);
 
 bool charset_add_all_chars(charset_t *set, int *errcode);
-bool charset_add_range(charset_t *set, int32_t start, int32_t end,
+bool charset_add_range(charset_t *set, int32_t first, int32_t last,
                        int *errcode);
 bool charset_add_char(charset_t *set, int32_t wc,
                       int *errcode);
@@ -93,12 +94,12 @@ intended for matching ``dot'' in a regular expression. The
 \f(CWCSET_NO_NEWLINE\fP flag affects this operation.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .TP
-\f(CWbool charset_add_range(charset_t *set, int32_t start, int32_t end,\fP
+\f(CWbool charset_add_range(charset_t *set, int32_t first, int32_t last,\fP
 .PD 0
 .TP
 \f(CW                       int *errcode);\fP
-Add the characters in the range \f(CWstart\fP to \f(CWfinish\fP to the
-set. It should be the case that \f(CWstart\fP \(<= \f(CWfinish\fP.
+Add the characters in the range \f(CWfirst\fP to \f(CWlast\fP to the
+set. It should be the case that \f(CWfirst\fP \(<= \f(CWlast\fP.
 Returns \f(CWtrue\fP upon success or \f(CWfalse\fP if something went wrong.
 .PD
 .TP

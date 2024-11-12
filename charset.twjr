@@ -365,13 +365,20 @@ struct _charset {
 	size_t   nchars_allocated;  // Number of characters allocated
 	int32_t  *chars;            // Characters added to the set
 	size_t   nelems;            // Number of elements in use
-	size_t   allocated;         // Number allocated.
+	size_t   allocated;         // Number allocated
 	set_item *items;            // Array of items
 };
 @
 
+We will see how it's built up and used as we go along.
+
+@node API Functions
+@chapter API Functions
+
+Here are the functions for the API.
+
 @node Error Codes
-@chapter Error Codes
+@section Error Codes
 
 Almost all of the functions return a success or error value via a
 pointer to a plain integer. Here are the error codes:
@@ -382,20 +389,436 @@ enum {
 	CSET_SUCCESS = 0,		// no problems
 	CSET_EBADPTR,		// NULL pointer received
 	CSET_EFROZEN,		// Cannot add more characters to the set
-	CSET_ECOLLATE,		// corresponds to REG_ECOLLATE
-	CSET_ECTYPE,		// corresponds to REG_ECTYPE
-	CSET_ESPACE,		// corresponds to REG_ESPACE
+	CSET_ECOLLATE,		// Corresponds to REG_ECOLLATE
+	CSET_ECTYPE,		// Corresponds to REG_ECTYPE
+	CSET_ESPACE,		// Corresponds to REG_ESPACE
+	CSET_ERANGE,		// Corresponds to REG_ERANGE
 };
 @
 
-@node The Easy Stuff
-@chapter The Easy Functions
+@node Creating The Charset
+@section Creating The Charset
 
-Let's get the easier functions out of the way.
+Creating the character set simply
+allocates the memory and forces it to zero.
+Then we check the flags.
+
+@<API declarations@>=
+typedef enum {
+	CSET_NO_FLAGS = 0,	// no special cases
+	CSET_NO_NEWLINE = 0x01,	// \n not allowed in inverted range or "all chars"
+	// other flags may be added if needed
+} charset_flags_t;
+
+@<error codes@>
+@
+
+
+@<API functions@>=
+/* charset_create --- make a new charset_t and initialize it */
+
+charset_t *
+charset_create(charset_flags_t flags, int *errcode)
+{
+	if (errcode == NULL)
+		return NULL;
+
+	charset_t *set = (charset_t *) malloc(sizeof(charset_t));
+	if (set == NULL) {
+		*errcode = CSET_ESPACE;
+		return NULL;
+	}
+
+	memset(set, 0, sizeof(charset_t));
+
+	if ((flags & CSET_NO_NEWLINE) != 0)
+		set->no_newlines = true;
+
+	*errcode = CSET_SUCCESS;
+	return set;
+}
+@
+
+@<API declarations@>=
+charset_t *charset_create(charset_flags_t flags, int *errcode);
+@
+
+@node Adding A Character
+@section Adding A Character
+
+The @code{charset_t} is intended for matching bracket expressions,
+which can have multiple single characters, ranges, and other objects.
+The most fundamental object is a single character, for example,
+@code{[aeiouy]}.  As the regex engine parses the bracket expression,
+it adds characters to the @code{charset_t} one at a time.
+
+Note that nothing prevents a user from writing a bracket expression
+like this: @code{[aeiouyAEIOUYaeiouy]}, where letters are repeated.
+We handle this later on, when building the final data structure.
+Initially, we simply add each character into @code{set->chars}.
+
+@<API functions@>=
+/* charset_add_char --- add a single wide character to the set */
+
+bool
+charset_add_char(charset_t *set, int32_t wc, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	@<create or grow the array of wide characters@>
+
+	set->chars[set->nchars_inuse++] = wc;
+	set->chars[set->nchars_inuse] = L'\0';	// make it into a string
+	return true;
+}
+@
+
+We check for @code{NULL} pointers in every function:
+
+@<check for NULL pointers@>=
+if (set == NULL) {
+	if (errcode != NULL)
+		*errcode = CSET_EBADPTR;
+	return false;
+}
+@
+
+We use the term @dfn{finalized} to mean that we have
+already built the final data structures. This occurs
+(as we'll see later) the first time the set is tested
+for membership of a character.  Until that time, characters,
+ranges, and other things may be added willy-nilly to
+the @code{charset_t}; finalizing cleans it all up.
+However, once finalized, nothing more may be added;
+we check that in every API function.
+
+@<check if finalized@>=
+if (set->finalized) {
+	*errcode = CSET_EFROZEN;
+	return false;
+}
+@
+
+The array of wide characters must be held in the @code{charset_t},
+since items are added incrementally, and not all at once as
+in the previous incarnation (setsearch). The code to create
+or grow the array follows a standard pattern.
+
+@<create or grow the array of wide characters@>=
+if (set->chars == NULL) {
+	set->chars = (int32_t *) malloc(sizeof(int32_t) * INITIAL_ALLOCATION);
+	if (set->chars == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	set->nchars_allocated = INITIAL_ALLOCATION;
+	set->nchars_inuse = 0;
+} else if (set->nchars_inuse + 1 >= set->nchars_allocated) {
+	int new_amount = set->nchars_allocated * 2;
+	int32_t *new_data = (int32_t *) realloc(set->chars, new_amount * sizeof(int32_t));
+
+	if (new_data == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	memset(new_data + set->nchars_allocated, 0, set->nchars_allocated * sizeof(int32_t));
+	set->nchars_allocated = new_amount;
+	set->chars = new_data;
+}
+@
+
+@<macros@>=
+#define INITIAL_ALLOCATION 10
+@
+
+@<API declarations@>=
+bool charset_add_char(charset_t *set, int32_t wc, int *errcode);
+@
+
+@node Adding Ranges
+@section Adding Ranges
+
+As mentioned, a range looks like @code{[a-z]}.  Ranges are represented
+as @code{RANGE_ITEM}s.  The left hand value must be less than or equal
+to the right hand value.
+
+Here too, a user can write something (silly) like @code{[a-eqra-ezhb-d]}
+This will initially create three @code{RANGE_ITEM}s, @code{a-e}, @code{a-e} (a
+second time) and @code{b-d}.  The final range is subsumed within the
+first one.  Finalizing the data structure cleans all this up so that in
+the end there is only one @code{RANGE_ITEM}, for @code{a-e}.
+
+@<API functions@>=
+/* charset_add_range --- add a range item */
+
+bool
+charset_add_range(charset_t *set, int32_t first, int32_t last, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	if (first > last) {
+		*errcode = CSET_ERANGE;
+		return false;
+	}
+
+	@<create or grow the set of items if necessary@>
+
+	set_item new_item;
+	new_item.item_type = RANGE_ITEM;
+	new_item.start = first;
+	new_item.end = last;
+	set->items[set->nelems++] = new_item;
+
+	return true;
+}
+@
+
+This code is the same as for dealing with the array of characters.
+
+@<create or grow the set of items if necessary@>=
+if (set->items == NULL) {
+	set->items = (set_item *) malloc(sizeof(set_item) * INITIAL_ALLOCATION);
+	if (set->items == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	set->allocated = INITIAL_ALLOCATION;
+	set->nelems = 0;
+} else if (set->nelems + 1 >= set->allocated) {
+	int new_amount = set->allocated * 2;
+	set_item *new_data = (set_item *) realloc(set->items, new_amount * sizeof(set_item));
+
+	if (new_data == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	memset(new_data + set->allocated, 0, set->allocated * sizeof(set_item));
+	set->allocated = new_amount;
+	set->items = new_data;
+}
+@
+
+Regular expressions use the @samp{.} (dot) metacharacter to mean
+``match any character.''  This can be represented simply as a range
+from zero to the maximum allowed character value. In Unicode, this
+is @code{0x10ffff}, and we make the assumption that this applies to
+other wide character sets as well.
+
+@<macros@>=
+#define MAX_CODE_POINT 0x10ffff	// max Unicode code point
+@
+
+There is a small wrinkle. If @code{CSET_NO_NEWLINE} is used, dot cannot
+match the newline character.  That's handled simply by having two range
+items, one from zero to ``newline minus one'' and the other from
+``newline plus one'' to the maximum value.
+Otherwise, only a single range item is needed.
+
+@<API functions@>=
+/* charset_add_all_chars --- make a range with all possible characters */
+
+bool
+charset_add_all_chars(charset_t *set, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	if (set->no_newlines) {
+		if (! charset_add_range(set, 0, L'\n' - 1, errcode))
+			return false;
+		if (! charset_add_range(set, L'\n' + 1, MAX_CODE_POINT, errcode))
+			return false;
+	} else {
+		if (! charset_add_range(set, 0, MAX_CODE_POINT, errcode))
+			return false;
+	}
+
+	*errcode = CSET_SUCCESS;
+	return true;
+}
+@
+
+@<API declarations@>=
+bool charset_add_range(charset_t *set, int32_t first, int32_t last, int *errcode);
+bool charset_add_all_chars(charset_t *set, int *errcode);
+@
+
+@node Inverting
+@section Inverting The Charset
+
+A bracket expression may @dfn{complemented}, meaning that it should match
+any character @emph{not} in the set. For example, @code{[^aeiouyAEIOUY]}
+matches any non-vowel character (for English).  This function marks the
+@code{charset_t} as being complemented, or inverted.  This is a one-way
+operation; it cannot be undone.
+
+@<API functions@>=
+/* charset_invert --- mark charset to return success if requested character not found */
+
+bool charset_invert(charset_t *set, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	set->complemented = true;
+	*errcode = CSET_SUCCESS;
+	return true;
+}
+@
+
+@<API declarations@>=
+bool charset_invert(charset_t *set, int *errcode);
+@
+
+@node The Funky Stuff
+@section Character Classes, Equivalence Classes, and Collating Sequences
+
+Besides characters and ranges, POSIX specifies three additional kinds of
+items that can occur inside a bracket expression, and which we have to
+be able to handle: character classes, equivalence classes, and collating
+sequences.
+
+@node Character Classes
+@subsection  Character Classes
+
+Character classes provide a locale-independent way of matching
+groups of characters, such as ``alphabetic'' or ``punctuation.''
+You write them like so: @code{[[:alpha:]]}. In other words,
+delimited by @code{[:} and @code{:]} inside the outer brackets
+of the bracket expression.
+
+We expect the regexp parser to pull the name out of the expression
+(e.g., @code{alpha}), and hand that to us as a regular C string.
+The string is looked up with @code{wctype()} (see the manpage)
+and the return value stored for later use with the @code{iswctype()}
+function. The string is copied and stored also, for debug use.
+
+@<API functions@>=
+/* charset_add_cclass --- add a character class, like "alnum" */
+
+bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	@<create or grow the set of items if necessary@>
+
+	wctype_t the_type = wctype(cclass);
+	if (the_type == 0) {	// not a known class name
+		*errcode = CSET_ECTYPE;
+		return false;
+	}
+
+	const char *class_name = strdup(cclass);
+	if (class_name == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+
+	set_item new_item;
+	new_item.item_type = CTYPE_ITEM;
+
+	new_item.wtype = the_type;
+	new_item.type_name = class_name;
+	set->items[set->nelems++] = new_item;
+
+	*errcode = CSET_SUCCESS;
+	return true;
+}
+@
+
+As with the regular character and the ranges, duplicates are
+possible; that's cleaned up upon finalization.
+
+@<API declarations@>=
+bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode);
+@
+
+@node Equivalence Classes
+@subsection Equivalence Classes
+
+An equivalence class describes a set of equivalent characters.
+For example, in a French locale, @code{[[=e=]]} might match @code{e}, 
+@code{@^e}, @code{@`e}, and @code{@'e}.
+
+Here is Mike's portable but ``sleazy'' (sic) way to add all
+the equivalent characters:
+
+@<API functions@>=
+/* charset_add_equiv --- add an equivalence class */
+
+bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	wchar_t wcs_in[2];
+	wchar_t wcs[2];
+	wchar_t abuf[100], wbuf[100];
+
+	wcs_in[0] = equiv;
+	wcs_in[1] = 0;
+	wcsxfrm(abuf, wcs_in, 99);
+	wcs[1] = 0;
+	for (wchar_t u = 1; u <= MAX_CODE_POINT; ++u) {
+		wcs[0] = u;
+		wcsxfrm(wbuf, wcs, 99);
+		if (abuf[0] == wbuf[0])
+			if (! charset_add_char(set, u, errcode))
+				return false;
+	}
+
+	*errcode = CSET_SUCCESS;
+	return true;
+}
+@
+
+@<API declarations@>=
+bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode);
+@
+
+@node Collating Sequences
+@subsection  Collating Sequences
+
+A collating sequence is a group of characters that should be
+treated as if it were a single character. It might be written
+like @code{[[.oa.]]}.  We support collating sequences of length one.
+
+@<API functions@>=
+/* charset_add_collate --- add a collating sequence */
+
+bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode)
+{
+	@<check for NULL pointers@>
+	@<check if finalized@>
+
+	// only single character collating sequences allowed,
+	// at least right now
+	if (collate[1] != L'\0') {
+		*errcode = CSET_ECOLLATE;
+		return false;
+	}
+
+	return charset_add_char(set, collate[0], errcode);
+}
+@
+
+@<API declarations@>=
+bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode);
+@
+
+@node The Easy Stuff
+@chapter Using The @code{charset_t} Once It's Built
+
 A fundamental assumption is that the array of items
 is sorted and uniqued. In addition, all @code{CTYPE_ITEM}s
 are at the front of the array, so that they can be tested
 first.
+
+The following function tests if a character is contained
+in the @code{charset_t}.
 
 @<API functions@>=
 /* charset_in_set --- see if a character is in the set */
@@ -407,7 +830,7 @@ charset_in_set(const charset_t *set, int32_t the_char, int *errcode)
 	*errcode = CSET_SUCCESS;
 
 	if (! set->finalized)
-		finalize(set, errcode);
+		finalize((charset_t *) set, errcode);
 
 	if (*errcode != CSET_SUCCESS)	// finalize() failed
 		return false;
@@ -421,13 +844,19 @@ charset_in_set(const charset_t *set, int32_t the_char, int *errcode)
 
 	return found;
 }
+@
 
+When we're done with the @code{charset_t}, we should
+release all the storage it uses.
+
+@<API functions@>=
 /* charset_free --- free all storage */
 
 bool
 charset_free(const charset_t *set, int *errcode)
 {
 	@<check for NULL pointers@>
+	// no need to check for finalized
 
 	for (int i = 0; i < set->nelems; i++) {
 		if (set->items[i].item_type == CTYPE_ITEM)
@@ -444,16 +873,6 @@ charset_free(const charset_t *set, int *errcode)
 
 	*errcode = CSET_SUCCESS;
 	return true;
-}
-@
-
-We check for @code{NULL} pointers in every function:
-
-@<check for NULL pointers@>=
-if (set == NULL) {
-	if (errcode != NULL)
-		*errcode = CSET_EBADPTR;
-	return false;
 }
 @
 
@@ -476,7 +895,7 @@ keep things simple.
 static bool
 is_found(const charset_t *set, int32_t the_char)
 {
-	set_item *items = brack_expr->items;
+	set_item *items = set->items;
 	int i;
 
 	@<Special case search for only one item in the set@>
@@ -507,7 +926,7 @@ Searching for a matching @code{RANGE_ITEM} is
 done using binary search:
 
 @<Search for a @code{RANGE_ITEM}@>=
-assert(set[i].item_type == RANGE_ITEM);
+assert(items[i].item_type == RANGE_ITEM);
 
 // binary search to see if we have it
 set_item *found;
@@ -539,40 +958,13 @@ if (set->nelems == 1
 @
 
 We need two comparison functions: one for use by @code{bsearch()} and
-a different one for use by by @code{qsort()}.  We
-want @code{CTYPE_ITEM}s to sort to the front of the list.  For sorting,
-we sort the @code{RANGE_ITEM}s based on their @code{start} value.
-For searching, we have to compare with the value in @code{key},
-and we will only be looking at @code{RANGE_ITEM}s.
-
+a different one for use by by @code{qsort()} (which we'll see later).
 The comparisons are fundamentally different. When sorting,
 we're comparing array elements against each other. When
 searching, we compare elements one at a time against a key.
 The sorting comparison is more elaborate:
 
-@<item comparison functions@>=
-/* item_compare_for_sorting --- compare two set_items */
-
-static int
-item_compare_for_sorting(const void *l, const void *r)
-{
-	set_item *left = (set_item *) l;
-	set_item *right = (set_item *) r;
-
-	if (left->item_type == CTYPE_ITEM && right->item_type == CTYPE_ITEM) {
-		return left->wtype - right->wtype;
-	} else if (left->item_type == CTYPE_ITEM && right->item_type == RANGE_ITEM) {
-		return -1;
-	} else if (left->item_type == RANGE_ITEM && right->item_type == CTYPE_ITEM) {
-		return +1;
-	} else {
-		assert(left->item_type == RANGE_ITEM && right->item_type == RANGE_ITEM);
-		return left->start - right->start;
-	}
-}
-@
-
-The searching function is simpler.  POSIX tells us that the first
+Here is the searching function.  POSIX tells us that the first
 argument is the key and the second is the array element being
 compared.
 
@@ -638,310 +1030,259 @@ charset_dump(const charset_t *set, FILE *fp)
 void charset_dump(const charset_t *set, FILE *fp);
 @
 
-@node API Functions
-@chapter API Functions
-
-Here are the functions for the API.
-
-@node Creating The Charset
-@section Creating The Charset
-
-Creating the character set simply
-allocates the memory and forces it to zero.
-Then we check the flags.
-
-@<API declarations@>=
-typedef enum {
-	CSET_NO_FLAGS = 0,	// no special cases
-	CSET_NO_NEWLINE = 0x01,	// \en not allowed in inverted range or "all chars"
-	// other flags may be added if needed
-} charset_flags_t;
-@
-
-
-@<API functions@>=
-/* charset_create --- make a new charset_t and initialize it */
-
-charset_t *
-charset_create(charset_flags_t flags, int *errcode)
-{
-	if (errcode == NULL)
-		return NULL;
-
-	charset_t *set = (charset_t *) malloc(sizeof(charset_t));
-	if (set == NULL) {
-		*errcode = CSET_ESPACE;
-		return NULL;
-	}
-
-	memset(set, 0, sizeof(charset_t));
-
-	if ((flags & CSET_NO_NEWLINE) != 0)
-		set->no_newlines = true;
-
-	*errcode = CSET_SUCCESS;
-	return set;
-}
-@
-
-@<API declarations@>=
-charset_t *charset_create(charset_flags_t flags, int *errcode);
-@
-
-@node Adding A Character
-@section Adding A Character
-
-@<API functions@>=
-/* charset_add_char --- add a single wide character to the set */
-
-bool
-charset_add_char(charset_t *set, int32_t wc, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	@<create or grow the array of wide characters@>
-
-	set->chars[set->nchars_inuse++] = wc;
-	set->chars[set->nchars_inuse] = L'\0';	// make it into a string
-	return true;
-}
-@
-
-
-@<check if finalized@>=
-if (set->finalized) {
-	*errcode = CSET_EFROZEN;
-	return false;
-}
-@
-
-@<create or grow the array of wide characters@>=
-if (set->chars == NULL) {
-	set->chars = (int32_t *) malloc(sizeof(int32_t * 10));
-	if (set->chars == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
-	set->nchars_allocated = 10;
-	set->nchars_inuse = 0;
-} else if (set->nchars_inuse + 1 >= set->nchars_allocated) {
-	int new_amount = set->nchars_allocated * 2;
-	int32_t *new_data = (int32_t *) realloc(set->chars, new_amount * sizeof(int32_t));
-
-	if (new_data == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
-	memset(new_data + set->nchars_allocated, 0, set->nchars_allocated * sizeof(int32_t));
-	set->nchars_allocated = new_amount;
-	set->chars = new_data;
-}
-@
-
-@<API declarations@>=
-bool charset_add_char(charset_t *set, int32_t wc, int *errcode);
-@
-
-@node Adding Ranges
-@section Adding Ranges
-
-@<API functions@>=
-/* charset_add_range --- add a range item */
-
-bool
-charset_add_range(charset_t *set, int32_t start, int32_t end, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	@<create or grow the set of items if necessary@>
-
-	set_item new_item;
-	new_item.item_type = RANGE_ITEM;
-	new_item.start = first;
-	new_item.end = last;
-	set->items[set->nelems++] = new_item;
-
-	return true;
-}
-@
-
-@<create or grow the set of items if necessary@>=
-if (set->items == NULL) {
-	set->items = (set_item *) malloc(sizeof(set_item * 10));
-	if (set->items == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
-	set->allocated = 10;
-	set->nelems = 0;
-} else if (set->nelems + 1 >= set->allocated) {
-	int new_amount = set->allocated * 2;
-	set_item *new_data = (set_item *) realloc(set->items, new_amount * sizeof(set_item));
-
-	if (new_data == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
-	memset(new_data + set->allocated, 0, set->allocated * sizeof(set_item));
-	set->allocated = new_amount;
-	set->items = new_data;
-}
-@
-
-@<API functions@>=
-/* charset_add_all_chars --- make a range with all possible characters */
-
-bool
-charset_add_all_chars(charset_t *set, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	if (set->no_newlines) {
-		if (! charset_add_range(set, 0, L'\n' - 1, errcode))
-			return false;
-		if (! charset_add_range(set, L'\n' + 1, 0x10ffff, errcode))
-			return false;
-	} else {
-		if (! charset_add_range(set, 0, 0x10ffff, errcode))
-			return false;
-	}
-
-	return true;
-}
-@
-
-@<API declarations@>=
-bool charset_add_range(charset_t *set, int32_t start, int32_t end, int *errcode);
-bool charset_add_all_chars(charset_t *set, int *errcode);
-@
-
-@node Inverting
-@section Inverting The Charset
-
-
-@<API functions@>=
-bool charset_invert(charset_t *set, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	set->inverted = true;
-	return true;
-}
-@
-
-@<API declarations@>=
-bool charset_invert(charset_t *set, int *errcode);
-@
-
-@node The Funky Stuff
-@chapter Character Classes, Equivalence Classes, and Collating Sequences
-
-@node Character Classes
-@section  Character Classes
-
-@<API functions@>=
-bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	@<create or grow the set of items if necessary@>
-
-	wctype_t the_type = wctype(cclass);
-	if (the_type == 0) {	// not a known class name
-		*errcode = CSET_ECTYPE;
-		return false;
-	}
-
-	const char *class_name = strdup(cclass);
-	if (class_name == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
-	set_item new_item;
-	new_item.item_type = CTYPE_ITEM;
-
-	new_item.wtype = the_type;
-	new_item.type_name = class_name;
-	set->items[set->nelems++] = new_item;
-
-	return true;
-}
-@
-
-@<API declarations@>=
-bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode);
-@
-
-@node Equivalence Classes
-@section Equivalence Classes
-
-Here is Mike's portable but ``sleazy'' (sic) way to add all
-the equivalent characters:
-
-@<API functions@>=
-bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	wchar_t wcs_in[2];
-	wchar_t wcs[2];
-	wchar_t abuf[100], wbuf[100];
-
-	wcs_in[0] = equiv;
-	wcs_in[1] = 0;
-	wcsxfrm(abuf, wcs_in, 99);
-	wcs[1] = 0;
-	for (wchar_t u = 1; u < 0x110000; ++u) {
-		wcs[0] = u;
-		wcsxfrm(wbuf, wcs, 99);
-		if (abuf[0] == wbuf[0])
-			if (! charset_add_char(set, u, errcode))
-				return false;
-	}
-
-	return true;
-}
-@
-
-@<API declarations@>=
-bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode);
-@
-
-@node Collating Sequences
-@section  Collating Sequences
-
-@<API functions@>=
-bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	// only single character collating sequences allowed,
-	// at least right now
-	if (collate[1] != L'\0') {
-		*errcode = CSET_ECOLLATE;
-		return false;
-	}
-
-	return charset_add_char(set, collate[0], errcode);
-}
-@
-
-@<API declarations@>=
-bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode);
-@
-
 @node Finalizing
 @chapter Finalizing The Charset
 
+Now it's time to do the hard part, which is to produce the
+final data structure.
+
+@<helper functions@>=
+/* finalize --- condense all the info into the final data structure */
+
+static void
+finalize(charset_t *set, int *errcode)
+{
+	assert(set != NULL && errcode != NULL);
+
+	@<sort wide character list@>
+	@<condense wide character list into @code{RANGE_ITEM}s@>
+	@<condense final array of @code{set_item}s@>
+}
+@
+
+Once we have the list of wide characters, sorting it is easy:
+
+@<sort wide character list@>=
+qsort(set->chars, set->nchars_inuse, sizeof(wint_t), wint_compare);
+@
+
+@noindent
+The comparison function is trivial:
+
+@<item comparison functions@>=
+/* wint_compare --- compare two wint values for qsort */
+
+static int
+wint_compare(const void *l, const void *r)
+{
+	wint_t *left = (wint_t *) l;
+	wint_t *right = (wint_t *) r;
+
+	return *left - *right;
+}
+@
+
+Now some of the fun begins:
+
+@<condense wide character list into @code{RANGE_ITEM}s@>=
+@<remove duplicate wide characters@>
+@<generate @code{RANGE_ITEM}s@>
+@
+
+Condensing the list simply shifts the characters down
+as duplicates are found.  This is painful if there are
+maybe thousands of duplicates but for typical regular
+expressions, there shouldn't be any problem.
+
+@<remove duplicate wide characters@>=
+size_t i, j;
+for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
+	if (set->chars[i] == set->chars[j]) {
+		for (int k = j + 1; k < set->nchars_inuse; j++, k++) {
+			set->chars[j] = set->chars[k];
+		}
+		set->chars[j] = L'\0';
+
+		set->nchars_inuse--;
+		j = i;
+		i--;	// keep searching from same spot
+	}
+}
+set->chars[set->nchars_inuse] = L'\0';	// not strictly necessary, but doesn't hurt
+@
+
+Once we have a sorted and uniqued list of wide characters,
+generating the correct ranges is relatively easy.
+
+@<generate @code{RANGE_ITEM}s@>=
+size_t range_start, total;
+range_start = total = 0;
+for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
+	if (set->chars[j] == set->chars[i] + 1) {	// ab...
+		continue;
+	} else if (set->chars[j] > set->chars[i] + 1) {
+		// acd...
+		// push a and start next range at c
+		if (! charset_add_range(set, 
+				set->chars[range_start], set->chars[i], errcode))
+			return;
+		total++;
+		range_start = j;
+	}
+}
+// Get any final range or character
+if (set->nchars_inuse > 0 && range_start <= set->nchars_inuse - 1) {
+	if (! charset_add_range(set, set->chars[range_start],
+				set->chars[set->nchars_inuse-1], errcode))
+			return;
+	total++;
+}
+set->nchars_inuse = total;
+@
+
+@<condense final array of @code{set_item}s@>=
+// sort it
+qsort(set->items, set->nelems,
+		sizeof(set_item), item_compare_for_sorting);
+
+// condense it
+set_item *items = set->items;
+for (i = 0, j = 1; j < set->nelems; i++, j++) {
+	if (   items[i].item_type == CTYPE_ITEM
+		&& items[j].item_type == CTYPE_ITEM
+		&& items[i].wtype == items[j].wtype) {
+		free((void *) items[j].type_name);
+		@<shift @code{items} down by one@>
+	} else if (items[i].item_type != items[j].item_type) {
+		continue;
+	} else if (items[i].item_type == RANGE_ITEM) {
+		@<condense overlapping ranges@>
+	}
+}
+@
+
+We want @code{CTYPE_ITEM}s to sort to the front of the list.  For sorting,
+we sort the @code{RANGE_ITEM}s based on their @code{start} value.
+For searching, we have to compare with the value in @code{key},
+and we will only be looking at @code{RANGE_ITEM}s.
+Here's the sorting function:
+
+@<item comparison functions@>=
+/* item_compare_for_sorting --- compare two set_items */
+
+static int
+item_compare_for_sorting(const void *l, const void *r)
+{
+	set_item *left = (set_item *) l;
+	set_item *right = (set_item *) r;
+
+	if (left->item_type == CTYPE_ITEM && right->item_type == CTYPE_ITEM) {
+		return left->wtype - right->wtype;
+	} else if (left->item_type == CTYPE_ITEM && right->item_type == RANGE_ITEM) {
+		return -1;
+	} else if (left->item_type == RANGE_ITEM && right->item_type == CTYPE_ITEM) {
+		return +1;
+	} else {
+		assert(left->item_type == RANGE_ITEM && right->item_type == RANGE_ITEM);
+		return left->start - right->start;
+	}
+}
+@
+
+There are multiple possibilities for
+overlapping ranges. For example, there's nothing stopping
+someone from writing @code{[a-q12c-h]}, or @code{[bca123a-c]} or
+almost anything else.  After sorting the various ranges, we
+end up with the following possibilities:
+
+@itemize @bullet
+@item
+Exact duplicate ranges:
+
+@example
+          +---+---+
+item[i]   | a | d |        +---+---+
+          +---+---+   ==>  | a | d |   item[i]
+item[j]   | a | d |        +---+---+
+          +---+---+
+@end example
+
+@noindent
+The duplicate should be removed.
+
+@item
+Adjacent ranges.
+
+@example
+          +---+---+
+item[i]   | a | d |                +---+---+
+          +---+---+---+----   ==>  | a | h |   item[i]
+item[j]           | e | h |        +---+---+
+                  +---+---+
+@end example
+
+@noindent
+The first range should be expanded to include the
+end point of the second, and the second one should
+be removed.
+
+@item
+Completely overlapping:
+
+@example
+          +----------+
+item[i]   | abcdefhi |          +---+---+
+          +----------+    ===>  | a | i |   item[i]
+item[j]   |    def   |          +---+---+
+          +----------+
+@end example
+
+@noindent
+The second one should be removed.
+
+@item
+Partially overlapping on the left:
+
+@example
+          +----------+
+item[i]   | abcdef   |         +---+---+
+          +----------+    ===> | a | h |   item[i]
+item[i]   |    defgh |         +---+---+
+          +----------+
+@end example
+
+@noindent
+Since ranges are sorted by @code{start}, we won't
+have overlapping on the right.
+Here too, the end point of the first range
+should become that of the second, and
+the second should be removed.
+@end itemize
+
+The following sequence of statements implements the logic:
+
+@<condense overlapping ranges@>=
+bool need_shift = false;
+if (items[i].start == items[j].start && items[i].end == items[j].end) {
+	need_shift = true;
+} else if (items[i].end + 1 == items[j].start) {
+	items[i].end = items[j].end;
+	need_shift = true;
+} else if (items[i].start < items[j].start && items[i].end > items[j].end) {
+	need_shift = true;
+} else if (   items[i].start <= items[j].start
+           && items[i].end > items[j].start
+           && items[j].end >= items[i].end) {
+	items[i].end = items[j].end;
+	need_shift = true;
+}
+if (need_shift) {
+	@<shift @code{items} down by one@>
+}
+// otherwise, just continue around the loop
+@
+
+@<shift @code{items} down by one@>=
+for (int k = j + 1; k < set->nelems; j++, k++)
+	items[j] = items[k];
+
+set->nelems--;
+i--;	// compensate for loop, continue checking at current position
+j = i + 1;
+@
+
 @node Source Files
-@section Source Files
+@chapter Source Files
 
 @(charset.h@)=
 #ifndef CHARSET_H
@@ -959,7 +1300,6 @@ extern "C" {
 
 typedef struct _charset charset_t;
 
-@<error codes@>
 @<API declarations@>
 
 #ifdef __cplusplus
@@ -973,7 +1313,8 @@ typedef struct _charset charset_t;
 
 @<includes@>
 #include "charset.h"	// for the charset_t typedef
-@<deal with @code{gettext()}@>
+
+@<macros@>
 
 @<data structures@>
 @<helper functions@>
@@ -992,32 +1333,709 @@ We include the standard header files that we'll need:
 @<includes@>=
 #include <stdio.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
-//#include <stdlib.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <locale.h>
 @
 
-Since we want the error messages to be translatable,
-we have deal with @code{gettext()}:
+@node test driver
+@chapter A Test Program And Driver
 
-@<deal with @code{gettext()}@>=
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
+We need a test program, and a shell script to drive it:
 
-#ifdef HAVE_GETTEXT_H
-#include "gettext.h"
-#define _(x) gettext(x)
-#else
-#define _(x) x
-#endif
+@node test program
+@section The Test Program
+
+The test program builds a set and then compares one or more characters
+against the set.  It takes several options:
+
+@table @option
+@item -F
+Expect failure. Mutually exclusive with @option{-S}.
+
+@item -S
+Expect success. Mutually exclusive with @option{-F}.
+
+@item -D
+Match ``dot'' (any character).
+
+@item -d
+Dump the data structure.
+
+@item -e
+Escapes are allowed (like @command{awk}). By default they are not.
+
+@item -i
+Ignore case when matching. By default case is significant.
+
+@item -n
+Disallow newlines when matching dot or complemented bracket
+expressions.
+
+@item -q
+Be quiet: don't print out what we're attempting match.
+@end table
+
+@strong{FIXME:} Make sure the above is complete.
+
+@(btest.c@)=
+/* btest.c --- a test program for the charset_xxx functions */
+
+@<Copyright statement@>
+
+@<main includes@>
+
+static charset_t *parse_bracket_expr(const char *expr, int flags, int *errcode);
+static const char *errcode2string(int errcode);
+		
+enum flags {
+	SS_ESCAPES_ALLOWED	= 0x01,
+	SS_IGNORE_CASE		= 0x02,
+	SS_NO_NEWLINES		= 0x04,
+	SS_DOT			= 0x08,
+};
+
+static bool
+find_ctype_info(const char *cp,
+                const char **the_name, int *errcode,
+                size_t mb_cur_max, mbstate_t *mbsp);
+@<test helper functions@>
+
+/* main --- parse arguments, run the test */
+
+int
+main(int argc, char **argv)
+{
+	int i, c;
+	wint_t wc;
+	char *cp;
+	bool expect_success = false, expect_failure = false;
+	bool escapes_allowed = false, ignore_case = false;
+	bool dump_data = false, quiet = false;
+
+	@<parse command line arguments@>
+	setlocale(LC_ALL, "");
+	@<compile the expression@>
+	@<test each wide character in the test case against the expression@>
+	@<dump the data if needed@>
+
+	return EXIT_SUCCESS;
+}
 @
 
-@node Test Program
-@chapter A Test Program
+@<main includes@>=
+@<includes@>
+#include <getopt.h>
+#include "charset.h"
+@
 
-@node First appendix
-@appendix First Appendix Title
+@<parse command line arguments@>=
+int flags = 0;
+while ((c = getopt(argc, argv, "SFdDeinq")) != -1) {
+	switch (c) {
+	case 'S':
+		expect_success = true;
+		break;
+	case 'F':
+		expect_failure = true;
+		break;
+	case 'd':
+		dump_data = true;
+		break;
+	case 'D':
+		flags |= SS_DOT;
+		break;
+	case 'e':
+		flags |= SS_ESCAPES_ALLOWED;
+		break;
+	case 'i':
+		flags |= SS_IGNORE_CASE;
+		break;
+	case 'n':
+		flags |= SS_NO_NEWLINES;
+		break;
+	case 'q':
+		quiet = true;
+		break;
+	case '?':
+		usage(argv[0]);
+		break;
+	}
+}
+
+if (   (! expect_success && ! expect_failure)
+    || (expect_success && expect_failure)) {
+	fprintf(stderr, "You must give exactly one of -S or -F.\n");
+	usage(argv[0]);
+}
+else if (optind + 2 > argc)	// no expr or no string provided
+	usage(argv[0]);
+@
+
+@<test helper functions@>=
+@<usage function@>
+@
+
+@<usage function@>=
+/* usage --- print a usage message and die */
+
+static void
+usage(const char *name)
+{
+	fprintf(stderr, "Usage: %s -S|-F [-deiq] '[bracket-expression]'" \
+					" '<string of characters>'\n",
+			name);
+	fprintf(stderr, "\t-S\tExpect match success.\n");
+	fprintf(stderr, "\t-F\tExpect failure of some kind.\n");
+	fprintf(stderr, "\t-d\tDump the data structure.\n");
+	fprintf(stderr, "\t-D\tMatch \"dot\" (any character).\n");
+	fprintf(stderr, "\t-e\tEscapes are allowed.\n");
+	fprintf(stderr, "\t-i\tIgnore case.\n");
+	fprintf(stderr, "\t-n\tNo newlines in [^...] or \"dot\".\n");
+	fprintf(stderr, "\t-q\tRun quietly.\n");
+	exit(EXIT_FAILURE);
+}
+@
+
+@<compile the expression@>=
+charset_t *bracket_expr;
+int errcode = 0;
+
+bracket_expr = parse_bracket_expr(argv[optind], flags, & errcode);
+if (bracket_expr == NULL && expect_success) {
+	fprintf(stderr, "bad expression: %s\n", errcode2string(errcode));
+	// can't dump the data, return was NULL
+	exit(EXIT_FAILURE);
+}
+@
+
+@<test each wide character in the test case against the expression@>=
+mbstate_t mbs;
+memset(& mbs, 0, sizeof(mbs));
+if (! quiet)
+	printf("expect %s: %s: %s\n", expect_success ? "success" : "failure",
+			argv[optind], argv[optind+1]);
+
+int mb_cur_max = MB_CUR_MAX;
+for (cp = argv[optind + 1]; *cp != '\0';) {
+	size_t count;
+	bool isvalid = true;
+
+	count = mbrtowc(& wc, cp, mb_cur_max, & mbs);
+	if (count == (size_t) -1 || count == (size_t) -2) {
+		count = 1;
+		wc = *cp & 0xFF;
+		cp++;	// skip over it and hope;
+		memset(& mbs, 0, sizeof(mbs));	// reset the state
+		isvalid = false;
+	} else
+		cp += count;
+
+	bool matched = charset_in_set(bracket_expr, wc, & errcode);
+	if (! matched && expect_success) {
+		fprintf(stderr, "%s: failed to match L'%lc', success expected.\n", argv[optind], wc);
+		@<dump the data if needed@>
+		exit(EXIT_FAILURE);
+	} else if (matched && expect_failure) {
+		fprintf(stderr, "%s: succeeded to match L'%lc', failure expected.\n", argv[optind], wc);
+		@<dump the data if needed@>
+		exit(EXIT_FAILURE);
+	}
+}
+@
+
+@<dump the data if needed@>=
+if (dump_data)
+	charset_dump(bracket_expr, stdout);
+@
+
+@<test helper functions@>=
+/* errcode2string --- turn a charset error code into a string */
+
+static const char *
+errcode2string(int errcode)
+{
+	static char buf[100];
+	static const char *messages[] = {
+		"success",					// CSET_SUCCESS
+		"bad pointer",				// CSET_EBADPTR
+		"frozen set",				// CSET_EFROZEN
+		"bad collation sequence",	// CSET_ECOLLATE
+		"bad character class",		// CSET_ECTYPE
+		"no memory",				// CSET_ESPACE
+		"bad range",				// CSET_ERANGE
+	};
+
+	if (errcode < CSET_SUCCESS || errcode > CSET_ERANGE) {
+		sprintf(buf, "unknown error code: %d", errcode);
+		return buf;
+	}
+
+	return messages[errcode];
+}
+@
+
+@node parsing the expression
+@section Parsing The Bracket Expression
+
+So, it seems that the hairiest part of setsearch was actually
+the code to parse the bracket expression and build up the data
+structure as it went along.  For the refactoring into this API,
+that code isn't needed.  However, it turns out that it is
+extremely useful for the test program!  So, we'll reuse it
+here.  Be prepared, it's a big chunk of code.
+
+@<test helper functions@>=
+/* parse_bracket_expr --- convert a bracket expression into a charset_t */
+
+static charset_t *
+parse_bracket_expr(const char *expr, int flags, int *errcode)
+{
+	@<variables for parsing@>
+	@<init variables for parsing@>
+	bool ignore_case = (flags & SS_IGNORE_CASE) != 0;
+	bool escapes_allowed = (flags & SS_ESCAPES_ALLOWED) != 0;
+	bool no_newlines = (flags & SS_NO_NEWLINES) != 0;
+	bool do_dot = (flags & SS_DOT) != 0;
+
+	if (expr == NULL) {
+		if (errcode != NULL)
+			*errcode = CSET_EBADPTR;
+		return NULL;
+	}
+
+	charset_t *bracket_expr = charset_create(no_newlines ? CSET_NO_FLAGS : CSET_NO_FLAGS, errcode);
+	if (bracket_expr == NULL)
+		return NULL;
+
+	@<get a wide character@>
+	if (a_wchar == L'.' && do_dot) {
+		if (! charset_add_all_chars(bracket_expr, errcode))
+			goto fail;
+		return bracket_expr;
+	}
+
+	if (a_wchar != L'[') {
+		*errcode = CSET_ERANGE;	// not really right
+		return NULL;
+	}
+
+	// main loop:
+	while (cp < last) {
+		@<get current wide character@>
+		if (at_first_char && cur_wchar == L'^') {
+			if (! charset_invert(bracket_expr, errcode))
+				goto fail;
+
+			// get the next character and then fall through
+			@<get current wide character@>
+		}
+
+		if (! at_first_char && ! escaped && cur_wchar == L']')
+			break;		// all done
+
+		at_first_char = false;
+
+		if (escaped)
+			goto check_for_range;
+
+		if (cur_wchar == L'[') {
+			@<peek at next wide character@>
+			if (wcschr(L":=.", next_wchar) == NULL)
+				goto check_for_range_2;
+
+			@<get current wide character@>
+			@<process @code{[:...:]} items@>
+			@<process @code{[=...=]} items@>
+			@<process @code{[.X.]} items@>
+		}
+
+	check_for_range:
+
+		@<peek at next wide character@>
+
+	check_for_range_2:
+		first_range_char_invalid = invalid;
+
+		if (next_wchar == L'-') {
+			wint_t first_wc, second_wc;
+
+			first_wc = cur_wchar;
+			// consume the '-'
+			cp += n;
+
+			// and get the second character
+			@<peek at next wide character@>
+
+			if (first_range_char_invalid || invalid /* 2nd range char */) {
+				*errcode = CSET_ERANGE;
+				goto fail;
+			}
+
+			if (next_wchar == L']') {
+				// '-' was before terminating ']', treat literally
+				if (! charset_add_char(bracket_expr, first_wc, errcode))
+					goto fail;
+				cur_wchar = L'-';
+				goto push_wchar;
+			} else {
+				@<get current wide character@>
+			}
+
+			second_wc = cur_wchar;
+			if (second_wc < first_wc) {
+				*errcode = CSET_ERANGE;
+				goto fail;
+			}
+			if (! charset_add_range(bracket_expr, first_wc, second_wc, errcode))
+				goto fail;
+
+			continue;
+		}
+
+	push_wchar:
+		// push cur_wchar onto wide character list
+		if (! charset_add_char(bracket_expr, cur_wchar, errcode))
+			goto fail;
+	}
+
+	if (cur_wchar != L']') {
+		*errcode = CSET_ERANGE;	// not perfect
+		goto fail;
+	}
+
+done:
+	return bracket_expr;
+
+fail:
+	charset_free(bracket_expr, errcode);
+	return NULL;
+}
+@
+
+Here are the variables we need when working through
+the expression using wide characters.
+
+@<variables for parsing@>=
+wint_t a_wchar, cur_wchar, next_wchar;
+size_t n;
+const char *cp, *last;
+bool at_first_char = true;
+bool escaped = false;
+bool invalid = false;
+bool first_range_char_invalid = false;
+mbstate_t mbs;
+size_t mb_cur_max = MB_CUR_MAX;
+@
+
+Initialization is obvious:
+
+@<init variables for parsing@>=
+cp = expr;
+last = expr + strlen(expr);
+memset(& mbs, 0, sizeof(mbs));
+@
+
+We need to get the current wide character and
+advance @code{cp}. In so doing, we have to handle
+escaped characters as well:
+
+@<get current wide character@>=
+@<get a wide character@>
+if (escapes_allowed && a_wchar == L'\\') {
+	@<get a wide character@>
+	cur_wchar = a_wchar;
+	at_first_char = false;
+	escaped = true;
+} else {
+	escaped = false;
+	cur_wchar = a_wchar;
+}
+@
+
+This actually gets the next wide character:
+
+@<get a wide character@>=
+n = mbrtowc(& a_wchar, cp, mb_cur_max, & mbs);
+if (n == (size_t) -1 || n == (size_t) -2) {
+	// treat bad bytes as individual code points,
+	// even if invalid and just skip over them.
+	a_wchar = *cp & 0xFF;
+	if (mb_cur_max > 1)
+		invalid = true;
+	n = 1;
+	// after an invalid conversion, reinitialize mbsmbsp
+	memset(& mbs, 0, sizeof(mbs));
+}
+cp += n;
+@
+
+And we also need to be able to peek ahead:
+
+@<peek at next wide character@>=
+n = mbrtowc(& next_wchar, cp, mb_cur_max, & mbs);
+if (n == (size_t) -1 || n == (size_t) -2) {
+	// here too, treat bad bytes as individual code points,
+	// even if invalid and just skip over them.
+	a_wchar = *cp & 0xFF;
+	if (mb_cur_max > 1)
+		invalid = true;
+	n = 1;
+	// after an invalid conversion, reinitialize mbs
+	memset(& mbs, 0, sizeof(mbs));
+}
+// since we are peeking, we do NOT advance cp
+@
+
+@node ctype items
+@subsection Handling Character Classes Like @code{[:alpha:]}
+
+Now, it's time to deal with @code{[...[:alpha:]...]}.
+POSIX allows for locales to have additional character classes
+above and beyond the standard 12 classes available in every locale.
+This means we have to ``nerd through'' the string to find the name,
+copy it, and then look it up with with @code{wctype()}.  Sigh.
+
+Even worse, since we're working with wide characters, we'll
+have to convert what we find back to a multibyte string
+before calling @code{wctype()}.
+
+@<process @code{[:...:]} items@>=
+if (cur_wchar == L':') {
+	size_t count = 0;
+	const char *the_name = NULL;
+
+	if (! find_ctype_info(cp, & the_name,
+			errcode, mb_cur_max, & mbs)) {
+		if (the_name != NULL)
+			free((void *) the_name);
+		goto fail;
+	}
+
+	cp += count;
+	if (! charset_add_cclass(bracket_expr, the_name, errcode)) {
+		if (the_name != NULL)
+			free((void *) the_name);
+		goto fail;
+	}
+	free((void *) the_name);	// it's copied inside charset_add_class
+
+	continue;
+}
+@
+
+@<test helper functions@>=
+/* find_ctype_info --- fill in the info for a character class */
+
+static bool
+find_ctype_info(const char *cp,
+                const char **the_name, int *errcode,
+                size_t mb_cur_max, mbstate_t *mbsp)
+{
+	const char *begin = cp;
+	size_t len = strlen(cp);
+	const char *last = cp + len;
+	char *name_buf;
+	wchar_t *w_name_buf;
+	wchar_t *namep = NULL;
+	wint_t a_wchar;
+	size_t n;
+	bool invalid = false;
+
+	w_name_buf = (wchar_t *) malloc((len + 1) * sizeof(wchar_t));
+	if (w_name_buf == NULL) {
+		*errcode = CSET_ESPACE;
+		return false;
+	}
+	memset(w_name_buf, 0, (len + 1) * sizeof(wchar_t));
+
+	for (namep = w_name_buf; cp < last;) {
+		@<get a wide character@>
+		if (a_wchar == L':') {
+			break;
+		}
+		*namep++ = a_wchar;
+	}
+
+	*namep = L'\0';
+	@<get a wide character@>
+	if (a_wchar != L']') {
+		*errcode = CSET_ECTYPE;
+		free(w_name_buf);
+		return false;
+	}
+
+	name_buf = (char *) malloc(len + 1);
+	if (name_buf == NULL) {
+		*errcode = CSET_ESPACE;
+		free(w_name_buf);
+		return false;
+	}
+	memset(name_buf, 0, len + 1);
+
+	mbstate_t mbs;	// use a separate mbstate_t
+	memset(& mbs, 0, sizeof(mbs));
+	const wchar_t *name_start = w_name_buf;
+	wcsrtombs(name_buf, & name_start, len + 1, & mbs);
+
+	*the_name = name_buf;
+	free(w_name_buf);
+
+	*errcode = CSET_SUCCESS;
+
+	return true;
+}
+@
+@node Equivalence Classes and Collating Elements
+@subsection Handling Equivalence Classes and Collating Elements
+
+The first step for an equivalence class is to extract
+the wide character and make sure it has the closing @samp{=]}.
+
+@<process @code{[=...=]} items@>=
+if (cur_wchar == L'=') {
+	wint_t the_wc;
+	const char *begin = cp;
+
+	@<get current wide character@>
+	the_wc = cur_wchar;
+
+	@<peek at next wide character@>
+	if (next_wchar != L'=') {
+		*errcode = CSET_ECTYPE;	// not really right
+		goto fail;
+	}
+	// consume the '='
+	cp += n;
+	@<peek at next wide character@>
+	if (next_wchar != L']') {
+		*errcode = CSET_ECTYPE;	// not really right
+		goto fail;
+	}
+	// consume the ']'
+	cp += n;
+
+	if (! charset_add_equiv(bracket_expr, the_wc, errcode))
+		goto fail;
+
+	continue;
+}
+@
+
+We allow single character collating elements:
+
+@<process @code{[.X.]} items@>=
+if (cur_wchar == L'.') {
+	wint_t the_wc;
+	const char *begin = cp;
+
+	@<get current wide character@>
+	the_wc = cur_wchar;
+
+	@<peek at next wide character@>
+	if (next_wchar != L'.') {
+		*errcode = CSET_ECOLLATE;
+		goto fail;
+	}
+	// consume the '.'
+	cp += n;
+	@<peek at next wide character@>
+	if (next_wchar != L']') {
+		*errcode = CSET_ECOLLATE;
+		goto fail;
+	}
+	// consume the ']'
+	cp += n;
+
+	if (! charset_add_char(bracket_expr, the_wc, errcode))
+		goto fail;
+
+	continue;
+}
+@
+
+@node test driver
+@section The Test Program Driver Script
+
+The idea is to have a text file containing tests, and a shell
+script to read the tests and call @command{btest} appropriately.
+The text file will have three columns separated by tabs:
+
+@enumerate
+@item
+The command line options. At the very least one of @option{-F} or @option{-S}.
+
+@item
+The bracket expression.
+
+@item
+One or more characters to test against the bracket expression.
+@end enumerate
+
+Lines that start with @samp{#} are comment lines and are ignored, as are
+empty lines.
+We rely on Bash's special @code{$'@dots{}'} string notation to include TAB
+characters instead of using physical TAB characters in the file.
+
+@(runtests.sh@)=
+#! /bin/bash
+
+TESTFILE=${1:-testdata.txt}
+
+sed -e $'/^[ \t]*#/d' -e $'/^[ \t]*$/d' $TESTFILE |
+	while IFS=$'\t' read options expr chars
+	do
+		./btest $options "$expr" "$chars"
+		echo
+	done
+@
+@post_create runtests.sh chmod +x runtests.sh
+
+We rely on the @file{Makefile} to save the results and compare them
+to known good results.
+
+For now, the test data is not included in this document.
+
+@node Commentary
+@chapter Commentary
+
+@itemize @bullet
+@item
+The idea for the data structure was undoubtedly inspired by Russ Cox's
+@code{libre2}, which uses a balanced binary tree of ranges for handling
+bracket expressions.
+
+In terms of searching, I expect the two data structures have the same
+``big O'' complexity; my data structure saves the additional space overhead
+of left and right subtree pointers.  Inserting into a balanced binary
+tree is more complicated than my method of building the structure and then
+sorting and uniquing it; however the binary tree won't insert something
+that is already there.
+
+In practice, I think it doesn't matter, as (a) most bracket expressions
+are very simple and not pathological, and (b) when processing lots of
+data, the amount of time spent building the data structure (compiling
+the regular expression) gets lost down in the noise compared to the
+amount of time spent executing it.
+
+@item
+One thing I've noticed a lot about Literate Programming is that
+inlined chunks end up being used when more conventional programming
+would dictate the use of a function (in C or @command{awk}) or
+a macro (in C).  In particular, I sometimes miss the ability
+to parameterize the objects a code chunk operates upon.
+
+It then becomes a question: once the code is complete, should I
+go back and modify things to use macros or functions? I think it
+depends upon if the generated code will be what's maintained
+going forward, or if the literate code will remain the main ``source''.
+Thus, at least for now, the question remains open.
+@end itemize
+
 
 @node Code Chunk Summaries
 @appendix Code Chunk Summaries
