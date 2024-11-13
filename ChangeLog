@@ -1,3 +1,8 @@
+2024-11-13         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Finished up, including the test program.
+	* testdata.txt, tests.good, README.md: New files.
+
 2024-11-12         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Almost all the coding done. Need to finish

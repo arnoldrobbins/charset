@@ -306,6 +306,24 @@ you will need to have @TeX{} and Texinfo installed,
 including @command{texi2pdf}.  Or you can ask me for
 a PDF, if necessary.
 
+@node Problem Statement
+@chapter Problem Statement
+
+Let's first define the problem.  We want a way to represent a defined set of
+characters, and then test if any given character is in the set or not.
+
+In the Good Old Days@registeredsymbol{}, with 7-bit ASCII, you could do this
+using a bitmap of 128 bits, which would take up on four 32-bit words.
+Even for eight bit character sets, you'd only need eight 32-bit words.
+
+In Unicode, which has over a million characters, a bit map would be very big.
+In particular, it's likely that it would be mostly empty; such sets of characters
+may have a few dozen or so characters in them, but not thousands or hundreds of thousands.
+
+Therefore, we need a data structure that is efficient in two dimensions:
+time for searching, and space that it occupies. I think the data structure
+presented here meets both criteria.
+
 @node The Data Structure
 @chapter The Underlying Data Structure
 
@@ -470,6 +488,8 @@ charset_add_char(charset_t *set, int32_t wc, int *errcode)
 
 	set->chars[set->nchars_inuse++] = wc;
 	set->chars[set->nchars_inuse] = L'\0';	// make it into a string
+
+	*errcode = CSET_SUCCESS;
 	return true;
 }
 @
@@ -571,6 +591,7 @@ charset_add_range(charset_t *set, int32_t first, int32_t last, int *errcode)
 	new_item.end = last;
 	set->items[set->nelems++] = new_item;
 
+	*errcode = CSET_SUCCESS;
 	return true;
 }
 @
@@ -829,11 +850,12 @@ charset_in_set(const charset_t *set, int32_t the_char, int *errcode)
 	@<check for NULL pointers@>
 	*errcode = CSET_SUCCESS;
 
-	if (! set->finalized)
+	if (! set->finalized) {
 		finalize((charset_t *) set, errcode);
 
-	if (*errcode != CSET_SUCCESS)	// finalize() failed
-		return false;
+		if (*errcode != CSET_SUCCESS)	// finalize() failed
+			return false;
+	}
 
 	if (the_char == L'\n' && set->no_newlines && set->complemented)
 		return false;
@@ -934,7 +956,7 @@ set_item key;
 key.item_type = RANGE_ITEM;
 key.start = key.end = the_char;
 
-found = bsearch(& key, set + i, set->nelems - i,
+found = bsearch(& key, set->items + i, set->nelems - i,
 				sizeof(set_item), item_compare_for_searching);
 
 return found != NULL;
@@ -950,11 +972,9 @@ As a special case, if the set has only one character
 in it, we avoid the overhead of binary search:
 
 @<Special case search for only one item in the set@>=
-if (set->nelems == 1
-    && set->items[0].item_type == RANGE_ITEM
-    && set->items[0].start <= the_char
-	&& the_char <= set->items[0].end)
-	return true;
+if (set->nelems == 1 && set->items[0].item_type == RANGE_ITEM) {
+    return (set->items[0].start <= the_char && the_char <= set->items[0].end);
+}
 @
 
 We need two comparison functions: one for use by @code{bsearch()} and
@@ -1009,8 +1029,9 @@ charset_dump(const charset_t *set, FILE *fp)
 	if (set == NULL || fp == NULL)
 		return;
 
-	fprintf(fp, "finalized = %s\n", boolval[!! set->finalized]);
+	fprintf(fp, "complemented = %s\n", boolval[!! set->complemented]);
 	fprintf(fp, "no_newlines = %s\n", boolval[!! set->no_newlines]);
+	fprintf(fp, "finalized = %s\n", boolval[!! set->finalized]);
 
 	set_item *items = set->items;
 	for (int i = 0; i < set->nelems; i++) {
@@ -1047,6 +1068,7 @@ finalize(charset_t *set, int *errcode)
 	@<sort wide character list@>
 	@<condense wide character list into @code{RANGE_ITEM}s@>
 	@<condense final array of @code{set_item}s@>
+	set->finalized = true;
 }
 @
 
@@ -1098,7 +1120,8 @@ for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
 		i--;	// keep searching from same spot
 	}
 }
-set->chars[set->nchars_inuse] = L'\0';	// not strictly necessary, but doesn't hurt
+if (set->chars != NULL)
+	set->chars[set->nchars_inuse] = L'\0';	// not strictly necessary, but doesn't hurt
 @
 
 Once we have a sorted and uniqued list of wide characters,
@@ -1410,11 +1433,10 @@ find_ctype_info(const char *cp,
 int
 main(int argc, char **argv)
 {
-	int i, c;
+	int c;
 	wint_t wc;
 	char *cp;
 	bool expect_success = false, expect_failure = false;
-	bool escapes_allowed = false, ignore_case = false;
 	bool dump_data = false, quiet = false;
 
 	@<parse command line arguments@>
@@ -1523,7 +1545,6 @@ if (! quiet)
 int mb_cur_max = MB_CUR_MAX;
 for (cp = argv[optind + 1]; *cp != '\0';) {
 	size_t count;
-	bool isvalid = true;
 
 	count = mbrtowc(& wc, cp, mb_cur_max, & mbs);
 	if (count == (size_t) -1 || count == (size_t) -2) {
@@ -1531,7 +1552,6 @@ for (cp = argv[optind + 1]; *cp != '\0';) {
 		wc = *cp & 0xFF;
 		cp++;	// skip over it and hope;
 		memset(& mbs, 0, sizeof(mbs));	// reset the state
-		isvalid = false;
 	} else
 		cp += count;
 
@@ -1549,8 +1569,13 @@ for (cp = argv[optind + 1]; *cp != '\0';) {
 @
 
 @<dump the data if needed@>=
-if (dump_data)
+if (dump_data) {
+	printf("escapes_allowed = %s\n",
+			(flags & SS_ESCAPES_ALLOWED) != 0 ? "true" : "false");
+	printf("ignore_case = %s\n",
+			(flags & SS_IGNORE_CASE) != 0 ? "true" : "false");
 	charset_dump(bracket_expr, stdout);
+}
 @
 
 @<test helper functions@>=
@@ -1693,6 +1718,18 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 			}
 			if (! charset_add_range(bracket_expr, first_wc, second_wc, errcode))
 				goto fail;
+			if (ignore_case) {
+				bool result;
+
+				if (iswlower(first_wc) && iswlower(second_wc))
+					result = charset_add_range(bracket_expr, towupper(first_wc),
+									towupper(second_wc), errcode);
+				else if (iswupper(first_wc) && iswupper(second_wc))
+					result = charset_add_range(bracket_expr, towlower(first_wc),
+									towlower(second_wc), errcode);
+				if (! result)
+					goto fail;
+			}
 
 			continue;
 		}
@@ -1701,6 +1738,17 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 		// push cur_wchar onto wide character list
 		if (! charset_add_char(bracket_expr, cur_wchar, errcode))
 			goto fail;
+		if (ignore_case) {
+			bool result;
+
+			if (iswlower(cur_wchar))
+				result = charset_add_char(bracket_expr, towupper(cur_wchar), errcode);
+			else if (iswupper(cur_wchar))
+				result = charset_add_char(bracket_expr, towlower(cur_wchar), errcode);
+
+			if (! result)
+				goto fail;
+		}
 	}
 
 	if (cur_wchar != L']') {
@@ -1708,7 +1756,6 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 		goto fail;
 	}
 
-done:
 	return bracket_expr;
 
 fail:
@@ -1806,7 +1853,6 @@ before calling @code{wctype()}.
 
 @<process @code{[:...:]} items@>=
 if (cur_wchar == L':') {
-	size_t count = 0;
 	const char *the_name = NULL;
 
 	if (! find_ctype_info(cp, & the_name,
@@ -1816,13 +1862,13 @@ if (cur_wchar == L':') {
 		goto fail;
 	}
 
-	cp += count;
+	cp += strlen(the_name) + 2;	// +2 for closing :]
 	if (! charset_add_cclass(bracket_expr, the_name, errcode)) {
 		if (the_name != NULL)
 			free((void *) the_name);
 		goto fail;
 	}
-	free((void *) the_name);	// it's copied inside charset_add_class
+	free((void *) the_name);	// it's copied inside charset_add_cclass
 
 	continue;
 }
@@ -1924,6 +1970,17 @@ if (cur_wchar == L'=') {
 
 	if (! charset_add_equiv(bracket_expr, the_wc, errcode))
 		goto fail;
+	if (ignore_case) {
+		bool result;
+
+		if (iswlower(the_wc))
+			result = charset_add_equiv(bracket_expr, towupper(the_wc), errcode);
+		else if (iswupper(the_wc))
+			result = charset_add_equiv(bracket_expr, towlower(the_wc), errcode);
+
+		if (! result)
+			goto fail;
+	}
 
 	continue;
 }
@@ -1956,6 +2013,17 @@ if (cur_wchar == L'.') {
 
 	if (! charset_add_char(bracket_expr, the_wc, errcode))
 		goto fail;
+	if (ignore_case) {
+		bool result;
+
+		if (iswlower(the_wc))
+			result = charset_add_char(bracket_expr, towupper(the_wc), errcode);
+		else if (iswupper(the_wc))
+			result = charset_add_char(bracket_expr, towlower(the_wc), errcode);
+
+		if (! result)
+			goto fail;
+	}
 
 	continue;
 }
@@ -2009,8 +2077,8 @@ For now, the test data is not included in this document.
 @itemize @bullet
 @item
 The idea for the data structure was undoubtedly inspired by Russ Cox's
-@code{libre2}, which uses a balanced binary tree of ranges for handling
-bracket expressions.
+@uref{https://github.com/google/re2, @code{libre2}}, which uses a balanced
+binary tree of ranges for handling bracket expressions.
 
 In terms of searching, I expect the two data structures have the same
 ``big O'' complexity; my data structure saves the additional space overhead
@@ -2037,6 +2105,23 @@ go back and modify things to use macros or functions? I think it
 depends upon if the generated code will be what's maintained
 going forward, or if the literate code will remain the main ``source''.
 Thus, at least for now, the question remains open.
+
+@item
+The exercise of reworking existing code under a new API (from setsearch to charset)
+has been interesting. I think the Literate Programming style has helped a lot.
+I was able to copy/paste both code and prose into their places, adjusting the
+code as needed, with very little trouble. In particular, the amount of reuse
+is quite high, which is very pleasing.
+
+@item
+I wrote the @file{charset.3} manpage first. (It can be found in
+the Github repository.) It went through several iterations before I was
+happy with it. Doing so was a good idea; it helped me clarify and
+simplify the API, and thus the implementation as well.
+
+@item
+I remain pleased with the underlying data structure. It is unchanged
+from setsearch, as is the way it's built.
 @end itemize
 
 

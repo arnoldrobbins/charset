@@ -1,0 +1,273 @@
+expect success: [abcdefghijklmnopqrstuvwxyz]: abcdhq
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'a', end = L'z'
+
+expect success: [^abcdefghijklmnopqrstuvwxyz]: ABCDHQ
+escapes_allowed = false
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'a', end = L'z'
+
+expect failure: [abcdefghijklmnopqrstuvwxyz]: ABCDHQ
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'a', end = L'z'
+
+expect failure: [^abcdefghijklmnopqrstuvwxyz]: abcdhq
+escapes_allowed = false
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'a', end = L'z'
+
+expect success: [abcdefghijklmnopqrstuvwxyz]: abcdhqABCDHQ
+escapes_allowed = false
+ignore_case = true
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'A', end = L'Z'
+  1. RANGE: start = L'a', end = L'z'
+
+expect failure: [^abcdefghijklmnopqrstuvwxyz]: abcdhqABCDHQ
+escapes_allowed = false
+ignore_case = true
+complemented = true
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'A', end = L'Z'
+  1. RANGE: start = L'a', end = L'z'
+
+expect success: [abc\[:digit\]1-4]: ad:[]2
+escapes_allowed = true
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'1', end = L'4'
+  1. RANGE: start = L':', end = L':'
+  2. RANGE: start = L'[', end = L'['
+  3. RANGE: start = L']', end = L']'
+  4. RANGE: start = L'a', end = L'd'
+  5. RANGE: start = L'g', end = L'g'
+  6. RANGE: start = L'i', end = L'i'
+  7. RANGE: start = L't', end = L't'
+
+expect failure: [^abc\[:digit\]1-4]: ad:[]2
+escapes_allowed = true
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'1', end = L'4'
+  1. RANGE: start = L':', end = L':'
+  2. RANGE: start = L'[', end = L'['
+  3. RANGE: start = L']', end = L']'
+  4. RANGE: start = L'a', end = L'd'
+  5. RANGE: start = L'g', end = L'g'
+  6. RANGE: start = L'i', end = L'i'
+  7. RANGE: start = L't', end = L't'
+
+expect success: [abc\[-\]1-4]: a[]2
+escapes_allowed = true
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'1', end = L'4'
+  1. RANGE: start = L'[', end = L']'
+  2. RANGE: start = L'a', end = L'c'
+
+expect failure: [^abc\[-\]1-4]: a[]2
+escapes_allowed = true
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'1', end = L'4'
+  1. RANGE: start = L'[', end = L']'
+  2. RANGE: start = L'a', end = L'c'
+
+expect success: [,.![:digit:]^%[:lower:]@#[:digit:]A-D]: 2,.!^%ab@#B
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. CTYPE: [:lower:]
+  1. CTYPE: [:digit:]
+  2. RANGE: start = L'!', end = L'!'
+  3. RANGE: start = L'#', end = L'#'
+  4. RANGE: start = L'%', end = L'%'
+  5. RANGE: start = L',', end = L','
+  6. RANGE: start = L'.', end = L'.'
+  7. RANGE: start = L'@', end = L'D'
+  8. RANGE: start = L'^', end = L'^'
+
+expect failure: [^,.![:digit:]^%[:lower:]@#[:digit:]A-D]: 2,.!^%ab@#B
+escapes_allowed = false
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. CTYPE: [:lower:]
+  1. CTYPE: [:digit:]
+  2. RANGE: start = L'!', end = L'!'
+  3. RANGE: start = L'#', end = L'#'
+  4. RANGE: start = L'%', end = L'%'
+  5. RANGE: start = L',', end = L','
+  6. RANGE: start = L'.', end = L'.'
+  7. RANGE: start = L'@', end = L'D'
+  8. RANGE: start = L'^', end = L'^'
+
+expect success: [^,.![:digit:]^%[:lower:]@#[:digit:]A-D]: ()
+escapes_allowed = false
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. CTYPE: [:lower:]
+  1. CTYPE: [:digit:]
+  2. RANGE: start = L'!', end = L'!'
+  3. RANGE: start = L'#', end = L'#'
+  4. RANGE: start = L'%', end = L'%'
+  5. RANGE: start = L',', end = L','
+  6. RANGE: start = L'.', end = L'.'
+  7. RANGE: start = L'@', end = L'D'
+  8. RANGE: start = L'^', end = L'^'
+
+expect failure: [,.![:digit:]^%[:lower:]@#[:digit:]A-D]: ()
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. CTYPE: [:lower:]
+  1. CTYPE: [:digit:]
+  2. RANGE: start = L'!', end = L'!'
+  3. RANGE: start = L'#', end = L'#'
+  4. RANGE: start = L'%', end = L'%'
+  5. RANGE: start = L',', end = L','
+  6. RANGE: start = L'.', end = L'.'
+  7. RANGE: start = L'@', end = L'D'
+  8. RANGE: start = L'^', end = L'^'
+
+expect success: [abcdefqrsc-ha-c---DEF]: ah-E
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'-', end = L'-'
+  1. RANGE: start = L'D', end = L'F'
+  2. RANGE: start = L'a', end = L'h'
+  3. RANGE: start = L'q', end = L's'
+
+expect success: [abcdefqrsc-ha-c---DEF]: AH-e
+escapes_allowed = false
+ignore_case = true
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'-', end = L'-'
+  1. RANGE: start = L'A', end = L'H'
+  2. RANGE: start = L'Q', end = L'S'
+  3. RANGE: start = L'a', end = L'h'
+  4. RANGE: start = L'q', end = L's'
+
+expect failure: [abcdefqrsc-ha-c---DEF]: 1234
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'-', end = L'-'
+  1. RANGE: start = L'D', end = L'F'
+  2. RANGE: start = L'a', end = L'h'
+  3. RANGE: start = L'q', end = L's'
+
+expect success: [\^\\abcde]: ab\^c
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'\', end = L'\'
+  1. RANGE: start = L'^', end = L'^'
+  2. RANGE: start = L'a', end = L'e'
+
+expect success: []abc]: ]abc
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L']', end = L']'
+  1. RANGE: start = L'a', end = L'c'
+
+expect success: []-abc]: ]abc
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L']', end = L'c'
+
+expect failure: [^]-abc]: ]ab
+escapes_allowed = false
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. RANGE: start = L']', end = L'c'
+
+expect success: [--/]: ./-
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'-', end = L'/'
+
+expect success: []-_]: ]^_
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L']', end = L'_'
+
+expect success: []abc-]: ]ab-
+escapes_allowed = false
+ignore_case = false
+complemented = false
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'-', end = L'-'
+  1. RANGE: start = L']', end = L']'
+  2. RANGE: start = L'a', end = L'c'
+
+expect failure: [^]abc-]: ]ab-
+escapes_allowed = false
+ignore_case = false
+complemented = true
+no_newlines = false
+finalized = true
+  0. RANGE: start = L'-', end = L'-'
+  1. RANGE: start = L']', end = L']'
+  2. RANGE: start = L'a', end = L'c'
+
+expect failure: [a[:word:]c]: a
+escapes_allowed = false
+ignore_case = false
+

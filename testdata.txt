@@ -1,0 +1,33 @@
+# Test data for the btest program which tests matching against bracket
+# expressions.
+#
+# Fields are separated by a single tab.
+#
+# Column 1 - options	Column 2 - expression	Column 3 - characters
+-Sd	[abcdefghijklmnopqrstuvwxyz]	abcdhq
+-Sd	[^abcdefghijklmnopqrstuvwxyz]	ABCDHQ
+-Fd	[abcdefghijklmnopqrstuvwxyz]	ABCDHQ
+-Fd	[^abcdefghijklmnopqrstuvwxyz]	abcdhq
+-Sdi	[abcdefghijklmnopqrstuvwxyz]	abcdhqABCDHQ
+-Fdi	[^abcdefghijklmnopqrstuvwxyz]	abcdhqABCDHQ
+# For escapes, we need two backslashes, since the shell processes the string.
+-Sde	[abc\\[:digit\\]1-4]	ad:[]2
+-Fde	[^abc\\[:digit\\]1-4]	ad:[]2
+-Sde	[abc\\[-\\]1-4]	a[]2
+-Fde	[^abc\\[-\\]1-4]	a[]2
+-Sd	[,.![:digit:]^%[:lower:]@#[:digit:]A-D]	2,.!^%ab@#B
+-Fd	[^,.![:digit:]^%[:lower:]@#[:digit:]A-D]	2,.!^%ab@#B
+-Sd	[^,.![:digit:]^%[:lower:]@#[:digit:]A-D]	()
+-Fd	[,.![:digit:]^%[:lower:]@#[:digit:]A-D]	()
+-Sd	[abcdefqrsc-ha-c---DEF]	ah-E
+-Sdi	[abcdefqrsc-ha-c---DEF]	AH-e
+-Fd	[abcdefqrsc-ha-c---DEF]	1234
+-Sd	[\\^\\\\abcde]	ab\\^c
+-Sd	[]abc]	]abc
+-Sd	[]-abc]	]abc
+-Fd	[^]-abc]	]ab
+-Sd	[--/]	./-
+-Sd	[]-_]	]^_
+-Sd	[]abc-]	]ab-
+-Fd	[^]abc-]	]ab-
+-Fd	[a[:word:]c]	a
