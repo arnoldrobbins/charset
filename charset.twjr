@@ -1845,6 +1845,8 @@ find_ctype_info(const char *cp,
 	wint_t a_wchar;
 	size_t n;
 	bool invalid = false;
+// This is a hack, but it's "just" test code
+#define mbs	(*mbsp)
 
 	w_name_buf = (wchar_t *) malloc((len + 1) * sizeof(wchar_t));
 	if (w_name_buf == NULL) {
@@ -1877,10 +1879,10 @@ find_ctype_info(const char *cp,
 	}
 	memset(name_buf, 0, len + 1);
 
-	mbstate_t mbs;	// use a separate mbstate_t
-	memset(& mbs, 0, sizeof(mbs));
+	mbstate_t mbs2;	// use a separate mbstate_t
+	memset(& mbs2, 0, sizeof(mbs2));
 	const wchar_t *name_start = w_name_buf;
-	wcsrtombs(name_buf, & name_start, len + 1, & mbs);
+	wcsrtombs(name_buf, & name_start, len + 1, & mbs2);
 
 	*the_name = name_buf;
 	free(w_name_buf);
@@ -1888,6 +1890,7 @@ find_ctype_info(const char *cp,
 	*errcode = CSET_SUCCESS;
 
 	return true;
+#undef mbs
 }
 @
 @node Equivalence Classes and Collating Elements
