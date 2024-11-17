@@ -879,21 +879,23 @@ charset_free(const charset_t *set, int *errcode)
 {
 	@<check for NULL pointers@>
 	// no need to check for finalized
+	*errcode = CSET_SUCCESS;
 
-	for (int i = 0; i < set->nelems; i++) {
-		if (set->items[i].item_type == CTYPE_ITEM)
-			free((void *) set->items[i].type_name);
-		else
-			break;
+	if (set->items != NULL) {
+		for (int i = 0; i < set->nelems; i++) {
+			if (set->items[i].item_type == CTYPE_ITEM)
+				free((void *) set->items[i].type_name);
+			else
+				break;
+		}
+		free((void *) set->items);
 	}
 
 	if (set->chars != NULL)
 		free((void *) set->chars);
 
-	free((void *) set->items);
 	free((void *) set);
 
-	*errcode = CSET_SUCCESS;
 	return true;
 }
 @
@@ -920,10 +922,21 @@ is_found(const charset_t *set, int32_t the_char)
 	set_item *items = set->items;
 	int i;
 
+	@<Check for empty set@>
 	@<Special case search for only one item in the set@>
 	@<Search for a @code{CTYPE_ITEM}@>
 	@<Search for a @code{RANGE_ITEM}@>
 }
+@
+
+MinRX wants to use a cute trick for matching all characters (dot).
+It creates a brand new set and then inverts it.  So, a set
+that's totally empty has to work, this means we can't assume
+that @code{set->items} has something in it.
+
+@<Check for empty set@>=
+if (set->items == NULL)		// empty set, can't match
+	return false;
 @
 
 The @code{CTYPE_ITEM}s are checked before the @code{RANGE_ITEM}s, since

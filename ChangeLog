@@ -1,3 +1,7 @@
+2024-11-17         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Handle the possibility of an empty set.
+
 2024-11-13         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Finished up, including the test program.
