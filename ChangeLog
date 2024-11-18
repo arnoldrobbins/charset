@@ -1,3 +1,7 @@
+2024-11-18         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.3: API updated after comments from Mike.
+
 2024-11-17         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Handle the possibility of an empty set.
