@@ -1,6 +1,7 @@
 2024-11-19         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Revise implementation per API changes.
+	(charset_in_set): Small optimization.
 
 2024-11-18         Arnold D. Robbins     <arnold@skeeve.com>
 

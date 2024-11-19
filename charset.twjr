@@ -821,7 +821,7 @@ charset_in_set(const charset_t *set, int32_t the_char)
 {
 	int result;
 
-	if (set == NULL)
+	if (set == NULL || the_char < 0)
 		return false;
 
 	if (! set->finalized) {
@@ -830,9 +830,6 @@ charset_in_set(const charset_t *set, int32_t the_char)
 		if (! set->finalized)	// finalize() failed
 			return false;
 	}
-
-	if (the_char < 0)
-		return false;
 
 	if (the_char == L'\n' && set->no_newlines && set->complemented)
 		return false;
