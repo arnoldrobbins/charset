@@ -404,7 +404,7 @@ pointer to a plain integer. Here are the error codes:
 @<error codes@>=
 // error code values:
 enum {
-	CSET_SUCCESS = 0,		// no problems
+	CSET_SUCCESS = 0,	// No problems
 	CSET_EBADPTR,		// NULL pointer received
 	CSET_EFROZEN,		// Cannot add more characters to the set
 	CSET_ECOLLATE,		// Corresponds to REG_ECOLLATE
@@ -414,29 +414,21 @@ enum {
 };
 @
 
+@<API declarations@>=
+@<error codes@>
+@
+
 @node Creating The Charset
 @section Creating The Charset
 
 Creating the character set simply
 allocates the memory and forces it to zero.
-Then we check the flags.
-
-@<API declarations@>=
-typedef enum {
-	CSET_NO_FLAGS = 0,	// no special cases
-	CSET_NO_NEWLINE = 0x01,	// \n not allowed in inverted range or "all chars"
-	// other flags may be added if needed
-} charset_flags_t;
-
-@<error codes@>
-@
-
 
 @<API functions@>=
 /* charset_create --- make a new charset_t and initialize it */
 
 charset_t *
-charset_create(charset_flags_t flags, int *errcode)
+charset_create(int *errcode)
 {
 	if (errcode == NULL)
 		return NULL;
@@ -449,16 +441,13 @@ charset_create(charset_flags_t flags, int *errcode)
 
 	memset(set, 0, sizeof(charset_t));
 
-	if ((flags & CSET_NO_NEWLINE) != 0)
-		set->no_newlines = true;
-
 	*errcode = CSET_SUCCESS;
 	return set;
 }
 @
 
 @<API declarations@>=
-charset_t *charset_create(charset_flags_t flags, int *errcode);
+charset_t *charset_create(int *errcode);
 @
 
 @node Adding A Character
@@ -475,33 +464,35 @@ like this: @code{[aeiouyAEIOUYaeiouy]}, where letters are repeated.
 We handle this later on, when building the final data structure.
 Initially, we simply add each character into @code{set->chars}.
 
+The API functions return an error code; @code{CSET_SUCCESS} is for
+when everything is good.
+
 @<API functions@>=
 /* charset_add_char --- add a single wide character to the set */
 
-bool
-charset_add_char(charset_t *set, int32_t wc, int *errcode)
+int
+charset_add_char(charset_t *set, int32_t wc)
 {
-	@<check for NULL pointers@>
+	@<check for NULL pointer@>
 	@<check if finalized@>
+
+	if (wc < 0)
+		return CSET_ERANGE;
 
 	@<create or grow the array of wide characters@>
 
 	set->chars[set->nchars_inuse++] = wc;
 	set->chars[set->nchars_inuse] = L'\0';	// make it into a string
 
-	*errcode = CSET_SUCCESS;
-	return true;
+	return CSET_SUCCESS;
 }
 @
 
-We check for @code{NULL} pointers in every function:
+We check for a @code{NULL} pointer in every function:
 
-@<check for NULL pointers@>=
-if (set == NULL) {
-	if (errcode != NULL)
-		*errcode = CSET_EBADPTR;
-	return false;
-}
+@<check for NULL pointer@>=
+if (set == NULL)
+	return CSET_EBADPTR;
 @
 
 We use the term @dfn{finalized} to mean that we have
@@ -514,10 +505,8 @@ However, once finalized, nothing more may be added;
 we check that in every API function.
 
 @<check if finalized@>=
-if (set->finalized) {
-	*errcode = CSET_EFROZEN;
-	return false;
-}
+if (set->finalized)
+	return CSET_EFROZEN;
 @
 
 The array of wide characters must be held in the @code{charset_t},
@@ -528,20 +517,18 @@ or grow the array follows a standard pattern.
 @<create or grow the array of wide characters@>=
 if (set->chars == NULL) {
 	set->chars = (int32_t *) malloc(sizeof(int32_t) * INITIAL_ALLOCATION);
-	if (set->chars == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
+	if (set->chars == NULL)
+		return CSET_ESPACE;
+
 	set->nchars_allocated = INITIAL_ALLOCATION;
 	set->nchars_inuse = 0;
 } else if (set->nchars_inuse + 1 >= set->nchars_allocated) {
 	int new_amount = set->nchars_allocated * 2;
 	int32_t *new_data = (int32_t *) realloc(set->chars, new_amount * sizeof(int32_t));
 
-	if (new_data == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
+	if (new_data == NULL)
+		return CSET_ESPACE;
+
 	memset(new_data + set->nchars_allocated, 0, set->nchars_allocated * sizeof(int32_t));
 	set->nchars_allocated = new_amount;
 	set->chars = new_data;
@@ -553,7 +540,7 @@ if (set->chars == NULL) {
 @
 
 @<API declarations@>=
-bool charset_add_char(charset_t *set, int32_t wc, int *errcode);
+int charset_add_char(charset_t *set, int32_t wc);
 @
 
 @node Adding Ranges
@@ -572,16 +559,14 @@ the end there is only one @code{RANGE_ITEM}, for @code{a-e}.
 @<API functions@>=
 /* charset_add_range --- add a range item */
 
-bool
-charset_add_range(charset_t *set, int32_t first, int32_t last, int *errcode)
+int
+charset_add_range(charset_t *set, int32_t first, int32_t last)
 {
-	@<check for NULL pointers@>
+	@<check for NULL pointer@>
 	@<check if finalized@>
 
-	if (first > last) {
-		*errcode = CSET_ERANGE;
-		return false;
-	}
+	if (first < 0 || last < 0 || first > last)
+		return CSET_ERANGE;
 
 	@<create or grow the set of items if necessary@>
 
@@ -591,8 +576,7 @@ charset_add_range(charset_t *set, int32_t first, int32_t last, int *errcode)
 	new_item.end = last;
 	set->items[set->nelems++] = new_item;
 
-	*errcode = CSET_SUCCESS;
-	return true;
+	return CSET_SUCCESS;
 }
 @
 
@@ -601,69 +585,27 @@ This code is the same as for dealing with the array of characters.
 @<create or grow the set of items if necessary@>=
 if (set->items == NULL) {
 	set->items = (set_item *) malloc(sizeof(set_item) * INITIAL_ALLOCATION);
-	if (set->items == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
+	if (set->items == NULL)
+		return CSET_ESPACE;
+
 	set->allocated = INITIAL_ALLOCATION;
 	set->nelems = 0;
 } else if (set->nelems + 1 >= set->allocated) {
 	int new_amount = set->allocated * 2;
 	set_item *new_data = (set_item *) realloc(set->items, new_amount * sizeof(set_item));
 
-	if (new_data == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
+	if (new_data == NULL)
+		return CSET_ESPACE;
+
 	memset(new_data + set->allocated, 0, set->allocated * sizeof(set_item));
 	set->allocated = new_amount;
 	set->items = new_data;
 }
 @
 
-Regular expressions use the @samp{.} (dot) metacharacter to mean
-``match any character.''  This can be represented simply as a range
-from zero to the maximum allowed character value. In Unicode, this
-is @code{0x10ffff}, and we make the assumption that this applies to
-other wide character sets as well.
-
-@<macros@>=
-#define MAX_CODE_POINT 0x10ffff	// max Unicode code point
-@
-
-There is a small wrinkle. If @code{CSET_NO_NEWLINE} is used, dot cannot
-match the newline character.  That's handled simply by having two range
-items, one from zero to ``newline minus one'' and the other from
-``newline plus one'' to the maximum value.
-Otherwise, only a single range item is needed.
-
-@<API functions@>=
-/* charset_add_all_chars --- make a range with all possible characters */
-
-bool
-charset_add_all_chars(charset_t *set, int *errcode)
-{
-	@<check for NULL pointers@>
-	@<check if finalized@>
-
-	if (set->no_newlines) {
-		if (! charset_add_range(set, 0, L'\n' - 1, errcode))
-			return false;
-		if (! charset_add_range(set, L'\n' + 1, MAX_CODE_POINT, errcode))
-			return false;
-	} else {
-		if (! charset_add_range(set, 0, MAX_CODE_POINT, errcode))
-			return false;
-	}
-
-	*errcode = CSET_SUCCESS;
-	return true;
-}
-@
 
 @<API declarations@>=
-bool charset_add_range(charset_t *set, int32_t first, int32_t last, int *errcode);
-bool charset_add_all_chars(charset_t *set, int *errcode);
+int charset_add_range(charset_t *set, int32_t first, int32_t last);
 @
 
 @node Inverting
@@ -678,19 +620,46 @@ operation; it cannot be undone.
 @<API functions@>=
 /* charset_invert --- mark charset to return success if requested character not found */
 
-bool charset_invert(charset_t *set, int *errcode)
+int
+charset_invert(charset_t *set)
 {
-	@<check for NULL pointers@>
+	@<check for NULL pointer@>
 	@<check if finalized@>
 
 	set->complemented = true;
-	*errcode = CSET_SUCCESS;
-	return true;
+	return CSET_SUCCESS;
 }
 @
 
 @<API declarations@>=
-bool charset_invert(charset_t *set, int *errcode);
+int charset_invert(charset_t *set);
+@
+
+@node No newlines
+@section Setting the ``no newlines'' Flag
+
+There are two cases where we may want a newline to not be allowed to match.
+The first is in an inverted character set.
+The second is if we choose to not let dot match newline.
+The first case is handled when we check a character for membership
+in the set. The second is handled by explicitly setting the @code{no_newlines}
+flag.
+
+@<API functions@>=
+/* charset_set_no_newline --- set the value of the "no newlines" flag */
+
+int charset_set_no_newlines(charset_t *set, bool no_newlines)
+{
+	@<check for NULL pointer@>
+	@<check if finalized@>
+
+	set->no_newlines = no_newlines;
+	return CSET_SUCCESS;
+}
+@
+
+@<API declarations@>=
+int charset_set_no_newlines(charset_t *set, bool no_newlines);
 @
 
 @node The Funky Stuff
@@ -719,24 +688,21 @@ function. The string is copied and stored also, for debug use.
 @<API functions@>=
 /* charset_add_cclass --- add a character class, like "alnum" */
 
-bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode)
+int
+charset_add_cclass(charset_t *set, const char *cclass)
 {
-	@<check for NULL pointers@>
+	@<check for NULL pointer@>
 	@<check if finalized@>
 
 	@<create or grow the set of items if necessary@>
 
 	wctype_t the_type = wctype(cclass);
-	if (the_type == 0) {	// not a known class name
-		*errcode = CSET_ECTYPE;
-		return false;
-	}
+	if (the_type == 0)	// not a known class name
+		return CSET_ECTYPE;
 
 	const char *class_name = strdup(cclass);
-	if (class_name == NULL) {
-		*errcode = CSET_ESPACE;
-		return false;
-	}
+	if (class_name == NULL)
+		return CSET_ESPACE;
 
 	set_item new_item;
 	new_item.item_type = CTYPE_ITEM;
@@ -745,8 +711,7 @@ bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode)
 	new_item.type_name = class_name;
 	set->items[set->nelems++] = new_item;
 
-	*errcode = CSET_SUCCESS;
-	return true;
+	return CSET_SUCCESS;
 }
 @
 
@@ -754,7 +719,7 @@ As with the regular character and the ranges, duplicates are
 possible; that's cleaned up upon finalization.
 
 @<API declarations@>=
-bool charset_add_cclass(charset_t *set, const char *cclass, int *errcode);
+int charset_add_cclass(charset_t *set, const char *cclass);
 @
 
 @node Equivalence Classes
@@ -770,14 +735,19 @@ the equivalent characters:
 @<API functions@>=
 /* charset_add_equiv --- add an equivalence class */
 
-bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode)
+int
+charset_add_equiv(charset_t *set, int32_t equiv)
 {
-	@<check for NULL pointers@>
+	@<check for NULL pointer@>
 	@<check if finalized@>
+
+	if (equiv < 0)
+		return CSET_ERANGE;
 
 	wchar_t wcs_in[2];
 	wchar_t wcs[2];
 	wchar_t abuf[100], wbuf[100];
+	int result;
 
 	wcs_in[0] = equiv;
 	wcs_in[1] = 0;
@@ -787,17 +757,20 @@ bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode)
 		wcs[0] = u;
 		wcsxfrm(wbuf, wcs, 99);
 		if (abuf[0] == wbuf[0])
-			if (! charset_add_char(set, u, errcode))
-				return false;
+			if ((result = charset_add_char(set, u)) != CSET_SUCCESS)
+				return result;
 	}
 
-	*errcode = CSET_SUCCESS;
-	return true;
+	return CSET_SUCCESS;
 }
 @
 
+@<macros@>=
+#define MAX_CODE_POINT 0x10ffff	// max Unicode code point
+@
+
 @<API declarations@>=
-bool charset_add_equiv(charset_t *set, int32_t equiv, int *errcode);
+int charset_add_equiv(charset_t *set, int32_t equiv);
 @
 
 @node Collating Sequences
@@ -810,33 +783,32 @@ like @code{[[.oa.]]}.  We support collating sequences of length one.
 @<API functions@>=
 /* charset_add_collate --- add a collating sequence */
 
-bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode)
+int
+charset_add_collate(charset_t *set, const int32_t *collate)
 {
-	@<check for NULL pointers@>
+	@<check for NULL pointer@>
 	@<check if finalized@>
 
 	// only single character collating sequences allowed,
 	// at least right now
-	if (collate[1] != L'\0') {
-		*errcode = CSET_ECOLLATE;
-		return false;
-	}
+	if (collate[1] != L'\0')
+		return CSET_ECOLLATE;
 
-	return charset_add_char(set, collate[0], errcode);
+	return charset_add_char(set, collate[0]);
 }
 @
 
 @<API declarations@>=
-bool charset_add_collate(charset_t *set, const int32_t *collate, int *errcode);
+int charset_add_collate(charset_t *set, const int32_t *collate);
 @
 
-@node The Easy Stuff
+@node Using the charset_t
 @chapter Using The @code{charset_t} Once It's Built
 
 A fundamental assumption is that the array of items
 is sorted and uniqued. In addition, all @code{CTYPE_ITEM}s
 are at the front of the array, so that they can be tested
-first.
+first. We see later how this is made to happen.
 
 The following function tests if a character is contained
 in the @code{charset_t}.
@@ -845,17 +817,22 @@ in the @code{charset_t}.
 /* charset_in_set --- see if a character is in the set */
 
 bool
-charset_in_set(const charset_t *set, int32_t the_char, int *errcode)
+charset_in_set(const charset_t *set, int32_t the_char)
 {
-	@<check for NULL pointers@>
-	*errcode = CSET_SUCCESS;
+	int result;
+
+	if (set == NULL)
+		return false;
 
 	if (! set->finalized) {
-		finalize((charset_t *) set, errcode);
+		finalize((charset_t *) set);
 
-		if (*errcode != CSET_SUCCESS)	// finalize() failed
+		if (! set->finalized)	// finalize() failed
 			return false;
 	}
+
+	if (the_char < 0)
+		return false;
 
 	if (the_char == L'\n' && set->no_newlines && set->complemented)
 		return false;
@@ -874,12 +851,11 @@ release all the storage it uses.
 @<API functions@>=
 /* charset_free --- free all storage */
 
-bool
-charset_free(const charset_t *set, int *errcode)
+int
+charset_free(const charset_t *set)
 {
-	@<check for NULL pointers@>
+	@<check for NULL pointer@>
 	// no need to check for finalized
-	*errcode = CSET_SUCCESS;
 
 	if (set->items != NULL) {
 		for (int i = 0; i < set->nelems; i++) {
@@ -896,13 +872,13 @@ charset_free(const charset_t *set, int *errcode)
 
 	free((void *) set);
 
-	return true;
+	return CSET_SUCCESS;
 }
 @
 
 @<API declarations@>=
-bool charset_in_set(const charset_t *set, int32_t the_char, int *errcode);
-bool charset_free(const charset_t *set, int *errcode);
+bool charset_in_set(const charset_t *set, int32_t the_char);
+int charset_free(const charset_t *set);
 @
 
 @node Searching
@@ -1074,9 +1050,10 @@ final data structure.
 /* finalize --- condense all the info into the final data structure */
 
 static void
-finalize(charset_t *set, int *errcode)
+finalize(charset_t *set)
 {
-	assert(set != NULL && errcode != NULL);
+	assert(set != NULL);
+	int result = 0;
 
 	@<sort wide character list@>
 	@<condense wide character list into @code{RANGE_ITEM}s@>
@@ -1149,8 +1126,8 @@ for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
 	} else if (set->chars[j] > set->chars[i] + 1) {
 		// acd...
 		// push a and start next range at c
-		if (! charset_add_range(set, 
-				set->chars[range_start], set->chars[i], errcode))
+		result = charset_add_range(set, set->chars[range_start], set->chars[i]);
+		if (result != CSET_SUCCESS)
 			return;
 		total++;
 		range_start = j;
@@ -1158,9 +1135,10 @@ for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
 }
 // Get any final range or character
 if (set->nchars_inuse > 0 && range_start <= set->nchars_inuse - 1) {
-	if (! charset_add_range(set, set->chars[range_start],
-				set->chars[set->nchars_inuse-1], errcode))
-			return;
+	result = charset_add_range(set, set->chars[range_start],
+				set->chars[set->nchars_inuse-1]);
+	if (result != CSET_SUCCESS)
+		return;
 	total++;
 }
 set->nchars_inuse = total;
@@ -1568,7 +1546,7 @@ for (cp = argv[optind + 1]; *cp != '\0';) {
 	} else
 		cp += count;
 
-	bool matched = charset_in_set(bracket_expr, wc, & errcode);
+	bool matched = charset_in_set(bracket_expr, wc);
 	if (! matched && expect_success) {
 		fprintf(stderr, "%s: failed to match L'%lc', success expected.\n", argv[optind], wc);
 		@<dump the data if needed@>
@@ -1627,6 +1605,13 @@ that code isn't needed.  However, it turns out that it is
 extremely useful for the test program!  So, we'll reuse it
 here.  Be prepared, it's a big chunk of code.
 
+@<check for failure@>=
+if (result != CSET_SUCCESS) {
+	*errcode = result;
+	goto fail;
+}
+@
+
 @<test helper functions@>=
 /* parse_bracket_expr --- convert a bracket expression into a charset_t */
 
@@ -1639,6 +1624,7 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 	bool escapes_allowed = (flags & SS_ESCAPES_ALLOWED) != 0;
 	bool no_newlines = (flags & SS_NO_NEWLINES) != 0;
 	bool do_dot = (flags & SS_DOT) != 0;
+	int result;
 
 	if (expr == NULL) {
 		if (errcode != NULL)
@@ -1646,14 +1632,22 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 		return NULL;
 	}
 
-	charset_t *bracket_expr = charset_create(no_newlines ? CSET_NO_FLAGS : CSET_NO_FLAGS, errcode);
-	if (bracket_expr == NULL)
+	charset_t *bracket_expr = charset_create(errcode);
+	if (bracket_expr == NULL || *errcode != CSET_SUCCESS)
 		return NULL;
+
+	if (no_newlines)
+		charset_set_no_newlines(bracket_expr, true);
 
 	@<get a wide character@>
 	if (a_wchar == L'.' && do_dot) {
-		if (! charset_add_all_chars(bracket_expr, errcode))
-			goto fail;
+		if (no_newlines) {
+			result = charset_add_char(bracket_expr, L'\n');
+			@<check for failure@>
+		}
+		result = charset_invert(bracket_expr);
+		@<check for failure@>
+
 		return bracket_expr;
 	}
 
@@ -1666,8 +1660,8 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 	while (cp < last) {
 		@<get current wide character@>
 		if (at_first_char && cur_wchar == L'^') {
-			if (! charset_invert(bracket_expr, errcode))
-				goto fail;
+			result = charset_invert(bracket_expr);
+			@<check for failure@>
 
 			// get the next character and then fall through
 			@<get current wide character@>
@@ -1716,8 +1710,9 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 
 			if (next_wchar == L']') {
 				// '-' was before terminating ']', treat literally
-				if (! charset_add_char(bracket_expr, first_wc, errcode))
-					goto fail;
+				result = charset_add_char(bracket_expr, first_wc);
+				@<check for failure@>
+
 				cur_wchar = L'-';
 				goto push_wchar;
 			} else {
@@ -1729,19 +1724,15 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 				*errcode = CSET_ERANGE;
 				goto fail;
 			}
-			if (! charset_add_range(bracket_expr, first_wc, second_wc, errcode))
-				goto fail;
-			if (ignore_case) {
-				bool result;
+			result = charset_add_range(bracket_expr, first_wc, second_wc);
+			@<check for failure@>
 
+			if (ignore_case) {
 				if (iswlower(first_wc) && iswlower(second_wc))
-					result = charset_add_range(bracket_expr, towupper(first_wc),
-									towupper(second_wc), errcode);
+					result = charset_add_range(bracket_expr, towupper(first_wc), towupper(second_wc));
 				else if (iswupper(first_wc) && iswupper(second_wc))
-					result = charset_add_range(bracket_expr, towlower(first_wc),
-									towlower(second_wc), errcode);
-				if (! result)
-					goto fail;
+					result = charset_add_range(bracket_expr, towlower(first_wc), towlower(second_wc));
+				@<check for failure@>
 			}
 
 			continue;
@@ -1749,18 +1740,15 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 
 	push_wchar:
 		// push cur_wchar onto wide character list
-		if (! charset_add_char(bracket_expr, cur_wchar, errcode))
-			goto fail;
+		result = charset_add_char(bracket_expr, cur_wchar);
+		@<check for failure@>
+
 		if (ignore_case) {
-			bool result;
-
 			if (iswlower(cur_wchar))
-				result = charset_add_char(bracket_expr, towupper(cur_wchar), errcode);
+				result = charset_add_char(bracket_expr, towupper(cur_wchar));
 			else if (iswupper(cur_wchar))
-				result = charset_add_char(bracket_expr, towlower(cur_wchar), errcode);
-
-			if (! result)
-				goto fail;
+				result = charset_add_char(bracket_expr, towlower(cur_wchar));
+			@<check for failure@>
 		}
 	}
 
@@ -1772,7 +1760,7 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 	return bracket_expr;
 
 fail:
-	charset_free(bracket_expr, errcode);
+	charset_free(bracket_expr);
 	return NULL;
 }
 @
@@ -1876,7 +1864,8 @@ if (cur_wchar == L':') {
 	}
 
 	cp += strlen(the_name) + 2;	// +2 for closing :]
-	if (! charset_add_cclass(bracket_expr, the_name, errcode)) {
+	result = charset_add_cclass(bracket_expr, the_name);
+	if (result != CSET_SUCCESS) {
 		if (the_name != NULL)
 			free((void *) the_name);
 		goto fail;
@@ -1981,18 +1970,14 @@ if (cur_wchar == L'=') {
 	// consume the ']'
 	cp += n;
 
-	if (! charset_add_equiv(bracket_expr, the_wc, errcode))
-		goto fail;
+	result = charset_add_equiv(bracket_expr, the_wc);
+	@<check for failure@>
 	if (ignore_case) {
-		bool result;
-
 		if (iswlower(the_wc))
-			result = charset_add_equiv(bracket_expr, towupper(the_wc), errcode);
+			result = charset_add_equiv(bracket_expr, towupper(the_wc));
 		else if (iswupper(the_wc))
-			result = charset_add_equiv(bracket_expr, towlower(the_wc), errcode);
-
-		if (! result)
-			goto fail;
+			result = charset_add_equiv(bracket_expr, towlower(the_wc));
+		@<check for failure@>
 	}
 
 	continue;
@@ -2024,18 +2009,15 @@ if (cur_wchar == L'.') {
 	// consume the ']'
 	cp += n;
 
-	if (! charset_add_char(bracket_expr, the_wc, errcode))
-		goto fail;
+	result = charset_add_char(bracket_expr, the_wc);
+	@<check for failure@>
+
 	if (ignore_case) {
-		bool result;
-
 		if (iswlower(the_wc))
-			result = charset_add_char(bracket_expr, towupper(the_wc), errcode);
+			result = charset_add_char(bracket_expr, towupper(the_wc));
 		else if (iswupper(the_wc))
-			result = charset_add_char(bracket_expr, towlower(the_wc), errcode);
-
-		if (! result)
-			goto fail;
+			result = charset_add_char(bracket_expr, towlower(the_wc));
+		@<check for failure@>
 	}
 
 	continue;

@@ -1,3 +1,7 @@
+2024-11-19         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Revise implementation per API changes.
+
 2024-11-18         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.3: API updated after comments from Mike.
