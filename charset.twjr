@@ -18,8 +18,8 @@
 @c This sets the edition of the document.
 
 @c These apply across the board.
-@set UPDATE-MONTH November, 2024
-@set EDITION 0.1
+@set UPDATE-MONTH December, 2024
+@set EDITION 0.2
 
 @set TITLE Efficient Searching of Large Character Sets --- Take Two
 @set SHORTTITLE Searching Character Sets
@@ -819,8 +819,6 @@ in the @code{charset_t}.
 bool
 charset_in_set(const charset_t *set, int32_t the_char)
 {
-	int result;
-
 	if (set == NULL || the_char < 0)
 		return false;
 
