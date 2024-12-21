@@ -1,3 +1,7 @@
+2024-12-21         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr (charset_in_set): Remove unused variable.
+
 2024-11-19         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Revise implementation per API changes.
