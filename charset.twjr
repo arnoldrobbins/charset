@@ -966,7 +966,6 @@ a different one for use by by @code{qsort()} (which we'll see later).
 The comparisons are fundamentally different. When sorting,
 we're comparing array elements against each other. When
 searching, we compare elements one at a time against a key.
-The sorting comparison is more elaborate:
 
 Here is the searching function.  POSIX tells us that the first
 argument is the key and the second is the array element being
