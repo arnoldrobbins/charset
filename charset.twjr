@@ -299,7 +299,7 @@ Let's first define the problem.  We want a way to represent a defined set of
 characters, and then test if any given character is in the set or not.
 
 In the Good Old Days@registeredsymbol{}, with 7-bit ASCII, you could do this
-using a bitmap of 128 bits, which would take up on four 32-bit words.
+using a bitmap of 128 bits, which would take up only four 32-bit words.
 Even for eight bit character sets, you'd only need eight 32-bit words.
 
 In Unicode, which has over a million characters, a bit map would be very big.
@@ -313,9 +313,7 @@ presented here meets both criteria.
 @node The Data Structure
 @chapter The Underlying Data Structure
 
-We'll start with the underlying data structure and how
-it's searched, and then move on to how it's built
-and the API that manages it.
+We'll start with the underlying data structure.
 
 A single item in the set is represented by
 a set item:
@@ -363,12 +361,12 @@ the memory:
 @<data structures@>=
 struct _charset {
 	bool     complemented;      // For [^...] sets
-	bool     no_newlines;       // For dumping
+	bool     no_newlines;       // If \n can't be in the set
 	bool     finalized;         // No more changes possible
 	size_t   nchars_inuse;      // Number of characters used
 	size_t   nchars_allocated;  // Number of characters allocated
 	int32_t  *chars;            // Characters added to the set
-	size_t   nelems;            // Number of elements in use
+	size_t   nelems;            // Number of elements (items) in use
 	size_t   allocated;         // Number allocated
 	set_item *items;            // Array of items
 };
@@ -622,7 +620,7 @@ int charset_invert(charset_t *set);
 @
 
 @node No newlines
-@section Setting the ``no newlines'' Flag
+@section Setting The ``no newlines'' Flag
 
 There are two cases where we may want a newline to not be allowed to match.
 The first is in an inverted character set.
@@ -888,7 +886,7 @@ is_found(const charset_t *set, int32_t the_char)
 
 MinRX wants to use a cute trick for matching all characters (dot).
 It creates a brand new set and then inverts it.  So, a set
-that's totally empty has to work, this means we can't assume
+that's totally empty has to work; this means we can't assume
 that @code{set->items} has something in it.
 
 @<Check for empty set@>=
@@ -1147,8 +1145,6 @@ for (i = 0, j = 1; j < set->nelems; i++, j++) {
 
 We want @code{CTYPE_ITEM}s to sort to the front of the list.  For sorting,
 we sort the @code{RANGE_ITEM}s based on their @code{start} value.
-For searching, we have to compare with the value in @code{key},
-and we will only be looking at @code{RANGE_ITEM}s.
 Here's the sorting function:
 
 @<item comparison functions@>=
@@ -1398,8 +1394,6 @@ expressions.
 Be quiet: don't print out what we're attempting match.
 @end table
 
-@strong{FIXME:} Make sure the above is complete.
-
 @(btest.c@)=
 /* btest.c --- a test program for the charset_xxx functions */
 
@@ -1411,10 +1405,10 @@ static charset_t *parse_bracket_expr(const char *expr, int flags, int *errcode);
 static const char *errcode2string(int errcode);
 		
 enum flags {
-	SS_ESCAPES_ALLOWED	= 0x01,
-	SS_IGNORE_CASE		= 0x02,
-	SS_NO_NEWLINES		= 0x04,
-	SS_DOT			= 0x08,
+	CS_ESCAPES_ALLOWED	= 0x01,
+	CS_IGNORE_CASE		= 0x02,
+	CS_NO_NEWLINES		= 0x04,
+	CS_DOT			= 0x08,
 };
 
 static bool
@@ -1464,16 +1458,16 @@ while ((c = getopt(argc, argv, "SFdDeinq")) != -1) {
 		dump_data = true;
 		break;
 	case 'D':
-		flags |= SS_DOT;
+		flags |= CS_DOT;
 		break;
 	case 'e':
-		flags |= SS_ESCAPES_ALLOWED;
+		flags |= CS_ESCAPES_ALLOWED;
 		break;
 	case 'i':
-		flags |= SS_IGNORE_CASE;
+		flags |= CS_IGNORE_CASE;
 		break;
 	case 'n':
-		flags |= SS_NO_NEWLINES;
+		flags |= CS_NO_NEWLINES;
 		break;
 	case 'q':
 		quiet = true;
@@ -1503,7 +1497,7 @@ else if (optind + 2 > argc)	// no expr or no string provided
 static void
 usage(const char *name)
 {
-	fprintf(stderr, "Usage: %s -S|-F [-deiq] '[bracket-expression]'" \
+	fprintf(stderr, "Usage: %s -S|-F [-deinq] '[bracket-expression]'" \
 					" '<string of characters>'\n",
 			name);
 	fprintf(stderr, "\t-S\tExpect match success.\n");
@@ -1566,9 +1560,9 @@ for (cp = argv[optind + 1]; *cp != '\0';) {
 @<dump the data if needed@>=
 if (dump_data) {
 	printf("escapes_allowed = %s\n",
-			(flags & SS_ESCAPES_ALLOWED) != 0 ? "true" : "false");
+			(flags & CS_ESCAPES_ALLOWED) != 0 ? "true" : "false");
 	printf("ignore_case = %s\n",
-			(flags & SS_IGNORE_CASE) != 0 ? "true" : "false");
+			(flags & CS_IGNORE_CASE) != 0 ? "true" : "false");
 	charset_dump(bracket_expr, stdout);
 }
 @
@@ -1609,6 +1603,8 @@ that code isn't needed.  However, it turns out that it is
 extremely useful for the test program!  So, we'll reuse it
 here.  Be prepared, it's a big chunk of code.
 
+Throughout, we need to be able to check for failure:
+
 @<check for failure@>=
 if (result != CSET_SUCCESS) {
 	*errcode = result;
@@ -1624,10 +1620,10 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 {
 	@<variables for parsing@>
 	@<init variables for parsing@>
-	bool ignore_case = (flags & SS_IGNORE_CASE) != 0;
-	bool escapes_allowed = (flags & SS_ESCAPES_ALLOWED) != 0;
-	bool no_newlines = (flags & SS_NO_NEWLINES) != 0;
-	bool do_dot = (flags & SS_DOT) != 0;
+	bool ignore_case = (flags & CS_IGNORE_CASE) != 0;
+	bool escapes_allowed = (flags & CS_ESCAPES_ALLOWED) != 0;
+	bool no_newlines = (flags & CS_NO_NEWLINES) != 0;
+	bool do_dot = (flags & CS_DOT) != 0;
 	int result;
 
 	if (expr == NULL) {
@@ -2068,7 +2064,7 @@ sed -e $'/^[ \t]*#/d' -e $'/^[ \t]*$/d' $TESTFILE |
 We rely on the @file{Makefile} to save the results and compare them
 to known good results.
 
-For now, the test data is not included in this document.
+For now, the test data and @file{Makefile} are not included in this document.
 
 @node Commentary
 @chapter Commentary
@@ -2120,7 +2116,7 @@ simplify the API, and thus the implementation as well.
 
 @item
 I remain pleased with the underlying data structure. It is unchanged
-from setsearch, as is the way it's built.
+from setsearch, as is the way it's built and searched.
 @end itemize
 
 
@@ -2151,9 +2147,6 @@ and the code chunk references.
 @appendixsec Code Chunk References
 
 @print_code_refs
-
-@node Bibliography
-@unnumbered Bibliography
 
 @node Concept Index
 @unnumbered Index
