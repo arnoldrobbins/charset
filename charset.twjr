@@ -91,30 +91,16 @@
 
 @copying
 @docbook
-<para>Published by:</para>
-
-<literallayout class="normal">Arnold David Robbins
-P.O. Box 354
-Nof Ayalon 9978500
-ISRAEL
-Email: <email>arnold@@skeeve.com</email>
-URL: <ulink url="https://www.skeeve.com/">https://www.skeeve.com/</ulink></literallayout>
-
 <literallayout class="normal">Copyright &copy; 2024
 Arnold David Robbins
-All Rights Reserved.</literallayout>
+Published under the terms of the 2-Clause BSD license.
+See <ulink url="https://opensource.org/license/bsd-2-clause">https://opensource.org/license/bsd-2-clause</ulink>.</literallayout>
 @end docbook
 
 @ifnotdocbook
-Copyright @copyright{} 2024 @*
-Arnold David Robbins @*
-All Rights Reserved.
-@end ifnotdocbook
-@sp 1
-The charset program is copyright
-@copyright{} 2024 by Arnold David Robbins.
-@c It is published under the conditions of a BSD license yet to be determined.
-Not for publication, yet.
+Copyright @copyright{} 2024 Arnold David Robbins.
+Published under the terms of the 2-Clause BSD license.
+See @uref{https://opensource.org/license/bsd-2-clause}.
 @sp 2
 This is Edition @value{EDITION} of @cite{@value{TITLE}}.
 @end copying
@@ -1332,8 +1318,32 @@ typedef struct _charset charset_t;
 To get it out of the way, here is the copyright statement.
 
 @<Copyright statement@>=
-// Copyright (C) 2024, Arnold David Robbins.
-// All rights reserved.  Not for redistribution (yet...).
+/*
+ * Copyright (C) 2024, Arnold David Robbins.
+ * 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 
+ * 1. Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ * 
+ * 2. Redistributions in binary form must reproduce the above copyright
+ * notice, this list of conditions and the following disclaimer in the
+ * documentation and/or other materials provided with the distribution.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 @
 
 We include the standard header files that we'll need:
