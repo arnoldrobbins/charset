@@ -1,3 +1,10 @@
+2024-12-25         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* LICENSE: New file.
+	* charset.twjr: Make copyright years 2023, 2024, as setsearch
+	was started in 2023.
+	* charset.3: Small fixes, add license info.
+
 2024-12-23         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Edit some of the prose throughout.

@@ -91,14 +91,14 @@
 
 @copying
 @docbook
-<literallayout class="normal">Copyright &copy; 2024
+<literallayout class="normal">Copyright &copy; 2023, 2024
 Arnold David Robbins
 Published under the terms of the 2-Clause BSD license.
 See <ulink url="https://opensource.org/license/bsd-2-clause">https://opensource.org/license/bsd-2-clause</ulink>.</literallayout>
 @end docbook
 
 @ifnotdocbook
-Copyright @copyright{} 2024 Arnold David Robbins.
+Copyright @copyright{} 2023, 2024 Arnold David Robbins.
 Published under the terms of the 2-Clause BSD license.
 See @uref{https://opensource.org/license/bsd-2-clause}.
 @sp 2
@@ -1315,7 +1315,7 @@ To get it out of the way, here is the copyright statement.
 
 @<Copyright statement@>=
 /*
- * Copyright (C) 2024, Arnold David Robbins.
+ * Copyright (C) 2023, 2024, Arnold David Robbins.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
