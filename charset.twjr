@@ -18,8 +18,8 @@
 @c This sets the edition of the document.
 
 @c These apply across the board.
-@set UPDATE-MONTH December, 2024
-@set EDITION 0.2
+@set UPDATE-MONTH January, 2025
+@set EDITION 0.3
 
 @set TITLE Efficient Searching of Large Character Sets --- Take Two
 @set SHORTTITLE Searching Character Sets
@@ -91,14 +91,14 @@
 
 @copying
 @docbook
-<literallayout class="normal">Copyright &copy; 2023, 2024
+<literallayout class="normal">Copyright &copy; 2023, 2024, 2025
 Arnold David Robbins
 Published under the terms of the 2-Clause BSD license.
 See <ulink url="https://opensource.org/license/bsd-2-clause">https://opensource.org/license/bsd-2-clause</ulink>.</literallayout>
 @end docbook
 
 @ifnotdocbook
-Copyright @copyright{} 2023, 2024 Arnold David Robbins.
+Copyright @copyright{} 2023, 2024, 2025 Arnold David Robbins.
 Published under the terms of the 2-Clause BSD license.
 See @uref{https://opensource.org/license/bsd-2-clause}.
 @sp 2
@@ -981,12 +981,18 @@ item_compare_for_searching(const void *k, const void *e)
 @section Printing The Data Structure
 
 Printing the data is straightforward.
+Initially, this routine was for debugging.
+It turns out that it will be helpful to build up a
+charset and then dump it out ranges for use in other
+C code.
+@xref{Generating Ranges}, for the rationale for
+this feature.
 
 @<API functions@>=
 /* charset_dump --- dump out the data structures */
 
 void
-charset_dump(const charset_t *set, FILE *fp)
+charset_dump(const charset_t *set, FILE *fp, bool use_c_format)
 {
 	static const char *boolval[] = {
 		"false",
@@ -996,26 +1002,49 @@ charset_dump(const charset_t *set, FILE *fp)
 	if (set == NULL || fp == NULL)
 		return;
 
-	fprintf(fp, "complemented = %s\n", boolval[!! set->complemented]);
-	fprintf(fp, "no_newlines = %s\n", boolval[!! set->no_newlines]);
-	fprintf(fp, "finalized = %s\n", boolval[!! set->finalized]);
-
 	set_item *items = set->items;
-	for (int i = 0; i < set->nelems; i++) {
-		if (items[i].item_type == CTYPE_ITEM) {
-			fprintf(fp, "%3d. CTYPE: [:%s:]\n", i, items[i].type_name);
-			continue;
-		}
-		assert(items[i].item_type == RANGE_ITEM);
-		fprintf(fp, "%3d. RANGE: start = L'%lc', end = L'%lc'\n",
-			i, items[i].start, items[i].end);
+	if (use_c_format) {
+		@<dump ranges in C format@>
+	} else {
+		@<dump in debug format@>
 	}
 	fflush(fp);
 }
 @
 
+The debug format prints the structure members in a (more or less)
+human readable fashion:
+
+@<dump in debug format@>=
+fprintf(fp, "complemented = %s\n", boolval[!! set->complemented]);
+fprintf(fp, "no_newlines = %s\n", boolval[!! set->no_newlines]);
+fprintf(fp, "finalized = %s\n", boolval[!! set->finalized]);
+
+for (int i = 0; i < set->nelems; i++) {
+	if (items[i].item_type == CTYPE_ITEM) {
+		fprintf(fp, "%3d. CTYPE: [:%s:]\n", i, items[i].type_name);
+		continue;
+	}
+	assert(items[i].item_type == RANGE_ITEM);
+	fprintf(fp, "%3d. RANGE: start = L'%lc', end = L'%lc'\n",
+		i, items[i].start, items[i].end);
+}
+@
+
+Dumping the ranges in C format is simpler:
+
+@<dump ranges in C format@>=
+for (int i = 0; i < set->nelems; i++) {
+	if (items[i].item_type == CTYPE_ITEM) {
+		continue;
+	}
+	assert(items[i].item_type == RANGE_ITEM);
+	fprintf(fp, "\t{ %d, %d },\n", items[i].start, items[i].end);
+}
+@
+
 @<API declarations@>=
-void charset_dump(const charset_t *set, FILE *fp);
+void charset_dump(const charset_t *set, FILE *fp, bool use_c_format);
 @
 
 @node Finalizing
@@ -1315,7 +1344,7 @@ To get it out of the way, here is the copyright statement.
 
 @<Copyright statement@>=
 /*
- * Copyright (C) 2023, 2024, Arnold David Robbins.
+ * Copyright (C) 2023, 2024, 2025, Arnold David Robbins.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -1563,7 +1592,7 @@ if (dump_data) {
 			(flags & CS_ESCAPES_ALLOWED) != 0 ? "true" : "false");
 	printf("ignore_case = %s\n",
 			(flags & CS_IGNORE_CASE) != 0 ? "true" : "false");
-	charset_dump(bracket_expr, stdout);
+	charset_dump(bracket_expr, stdout, false);
 }
 @
 
@@ -2065,6 +2094,184 @@ We rely on the @file{Makefile} to save the results and compare them
 to known good results.
 
 For now, the test data and @file{Makefile} are not included in this document.
+
+@node Generating Ranges
+@chapter Well, Dang!
+
+In January of 2025, we found that @uref{https://roaringbitmap.org/about/,
+Roaring Bitmaps} gave a huge speedup for storing and testing values
+in a set, even over the charset code.  It's likely that that code will
+be used instead of charset.
+
+However, for some additional work being done in MinRX, it won't be
+possible to rely on the @code{*ctype()} routines. Instead, it will
+be necessary to manually build the sets of characters that match
+@code{[:alpha:]}, @code{[:lower:]}, and so on, by looping through all
+the Unicode code points and testing them.
+
+The Roaring Bitmaps code allows you to set bits in a bitmap based on
+the starting and ending points of a range.  The charset code is
+perfect for turning large sets of values into smaller sets of ranges.
+
+With a new program to generate the ranges, and a small change to the
+@code{charset_dump()} function, this becomes straightforward.
+In this chapter, we write the new program.
+
+@(genranges.c@)=
+@<Copyright statement@>
+
+@<genranges includes@>
+
+@<genranges declarations@>
+@<genranges globals@>
+
+/* main --- process args */
+
+int
+main(int argc, char **argv)
+{
+	int i;
+
+	if (argc == 1)
+		usage(argv[0]);	// will exit
+
+	for (i = 1; i < argc; i++)
+		process(argv[i]);
+
+	return EXIT_SUCCESS;
+}
+
+@<genranges usage function@>
+@<process function@>
+@
+
+@<genranges includes@>=
+#include <stdio.h>
+#include <errno.h>
+#include <locale.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <wctype.h>
+
+#include "charset.h"
+@
+
+@<genranges declarations@>=
+extern void process(const char *locale_name);
+extern void usage(const char *progname);
+@
+
+@<genranges usage function@>=
+/* usage --- print usage message and exit with error */
+
+void
+usage(const char *progname)
+{
+	fprintf(stderr, "usage: %s locale-name ...\n", progname);
+
+	exit(EXIT_FAILURE);
+}
+@
+
+@<genranges globals@>=
+static const int max_unicode = 0x10FFFF;
+@
+
+We will need a data structure to use for
+finding the different ranges:
+
+@<typeinfo array@>=
+static struct typeinfo {
+	const char *name;
+	wctype_t	type;
+	charset_t *cset;
+	FILE *fp;
+} types[] = {
+	{ "alnum", 0, NULL, NULL },
+	{ "alpha", 0, NULL, NULL },
+	{ "blank", 0, NULL, NULL },
+	{ "cntrl", 0, NULL, NULL },
+	{ "digit", 0, NULL, NULL },
+	{ "graph", 0, NULL, NULL },
+	{ "lower", 0, NULL, NULL },
+	{ "print", 0, NULL, NULL },
+	{ "punct", 0, NULL, NULL },
+	{ "space", 0, NULL, NULL },
+	{ "upper", 0, NULL, NULL },
+	{ "xdigit", 0, NULL, NULL },
+	{ NULL, 0, NULL, NULL },
+};
+@
+
+@<process function@>=
+/* process --- for a given locale, generate the ranges for the various ctypes */
+
+void
+process(const char *localename)
+{
+	char buf[BUFSIZ];
+	int i;
+	int32_t c;
+	@<typeinfo array@>
+
+	if (mkdir(localename, 0755) < 0 && errno != EEXIST) {
+		fprintf(stderr, "%s: could not make directory: %s\n",
+			localename, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
+	setlocale(LC_ALL, localename);
+
+	@<initialize types array@>
+
+	// loop over all the characters once
+	for (c = 0; c < max_unicode; c++) {
+		// check the character if it matches any of the ctypes
+		for (i = 0; types[i].name != NULL; i++) {
+			if (iswctype(c, types[i].type))
+				(void) charset_add_char(types[i].cset, c);
+		}
+	}
+
+	// dump the ranges
+	for (i = 0; types[i].name != NULL; i++) {
+		// test a char to finalize the range
+		(void) charset_in_set(types[i].cset, L'A');
+
+		// dump the range
+		fprintf(types[i].fp, "static struct range %s[] = {\n", types[i].name);
+		charset_dump(types[i].cset, types[i].fp, true);
+		fprintf(types[i].fp, "}\n");
+		fclose(types[i].fp);
+		charset_free(types[i].cset);
+
+		types[i].type = 0;
+		types[i].fp = NULL;
+		types[i].cset = NULL;
+	}
+}
+@
+
+@<initialize types array@>=
+for (i = 0; types[i].name != NULL; i++) {
+	FILE *fp;
+
+	sprintf(buf, "%s/%s", localename, types[i].name);
+	if ((fp = fopen(buf, "w")) == NULL) {
+		fprintf(stderr, "%s: could not open: %s\n",
+			buf, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
+	types[i].fp = fp;
+	types[i].type = wctype(types[i].name);
+	int errcode = 0;
+	types[i].cset = charset_create(& errcode);
+}
+@
 
 @node Commentary
 @chapter Commentary

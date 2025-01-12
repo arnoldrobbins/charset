@@ -1,3 +1,11 @@
+2025-01-12         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Update copyright year.  Increment the EDITION.
+	Add new program genranges.  Modify charset_dump to use C format
+	in addition to the previous debug format.
+	* LICENSE: Update copyright year.
+	* Makefile: Add genranges program.
+
 2024-12-25         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* LICENSE: New file.

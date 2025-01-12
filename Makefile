@@ -12,7 +12,7 @@ DOC = charset.texi
 
 PDF = charset.pdf
 
-all: $(PDF) btest
+all: $(PDF) btest genranges
 
 $(PDF): $(DOC) texinfo.tex
 	texi2pdf $(DOC)
@@ -29,6 +29,14 @@ btest.c: $(TWJRSOURCE)
 
 btest: $(OBJ) btest.o
 	gcc $(CFLAGS) $(OBJ) btest.o -o btest
+
+genranges.o: genranges.c
+
+genranges.c: $(TWJRSOURCE)
+	./jrtangle $(TWJRSOURCE)
+
+genranges: $(OBJ) genranges.o
+	gcc $(CFLAGS) $(OBJ) genranges.o -o genranges
 
 $(SOURCE): $(TWJRSOURCE)
 	./jrtangle $(TWJRSOURCE)
