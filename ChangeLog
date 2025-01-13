@@ -1,3 +1,8 @@
+2025-01-13         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr (charset_dump): Add a closing semicolon to
+	C code dump format. Oops.
+
 2025-01-12         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Update copyright year.  Increment the EDITION.

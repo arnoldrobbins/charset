@@ -2244,7 +2244,7 @@ process(const char *localename)
 		// dump the range
 		fprintf(types[i].fp, "static struct range %s[] = {\n", types[i].name);
 		charset_dump(types[i].cset, types[i].fp, true);
-		fprintf(types[i].fp, "}\n");
+		fprintf(types[i].fp, "};\n");
 		fclose(types[i].fp);
 		charset_free(types[i].cset);
 
