@@ -19,9 +19,9 @@
 
 @c These apply across the board.
 @set UPDATE-MONTH January, 2025
-@set EDITION 0.3
+@set EDITION 0.4
 
-@set TITLE Efficient Searching of Large Character Sets --- Take Two
+@set TITLE Efficient Searching of Large Character Sets --- Take Two And A Half
 @set SHORTTITLE Searching Character Sets
 
 @iftex
@@ -59,15 +59,6 @@
 @i{\text\}
 @end macro
 @end ifnottex
-
-@c Uncomment this if you want the metafont logo.
-@ignore
-@ifnottex
-@macro MF{}
-@sc{METAFONT}
-@end macro
-@end ifnottex
-@end ignore
 
 @c merge the function and variable indexes into the concept index
 @c do so without the code font, and in the index entries do the
@@ -275,6 +266,15 @@ Almost all of the original setsearch code and literate
 documentation are reused here, but in a different way.
 In particular, the code for parsing a bracket expression will
 come in handy for the test program.
+
+Late in 2024, Mike made some changes in his library that require
+some changes in @code{charset}. In particular, the way character
+classes, such as @code{[:lower:]}, are handled needs to be
+done by including the specific ranges of characters that match
+the class, instead of using @code{wctype()} and the related
+types and functions.  This document and its code are updated
+to meet the new requirements. The previous version is available
+in the GitHub repository with the tag @samp{before-firstcset-revamp}.
 
 The machine-readable files are available from GitHub. The steps
 necessary to get them are:
@@ -2096,22 +2096,17 @@ to known good results.
 For now, the test data and @file{Makefile} are not included in this document.
 
 @node Generating Ranges
-@chapter Well, Dang!
+@chapter Generating Ranges To Replace The @code{*ctype()} Functions
 
-In January of 2025, we found that @uref{https://roaringbitmap.org/about/,
-Roaring Bitmaps} gave a huge speedup for storing and testing values
-in a set, even over the charset code.  It's likely that that code will
-be used instead of charset.
-
-However, for some additional work being done in MinRX, it won't be
+Towards the end of 2024 and beginning of 2025, we found that,
+for some additional work being done in MinRX, it won't be
 possible to rely on the @code{*ctype()} routines. Instead, it will
 be necessary to manually build the sets of characters that match
 @code{[:alpha:]}, @code{[:lower:]}, and so on, by looping through all
 the Unicode code points and testing them.
-
-The Roaring Bitmaps code allows you to set bits in a bitmap based on
-the starting and ending points of a range.  The charset code is
-perfect for turning large sets of values into smaller sets of ranges.
+The charset code is
+perfect for turning large sets of values into smaller sets of ranges,
+which can then be easily added to a charset under construction.
 
 With a new program to generate the ranges, and a small change to the
 @code{charset_dump()} function, this becomes straightforward.
@@ -2242,8 +2237,9 @@ process(const char *localename)
 		(void) charset_in_set(types[i].cset, L'A');
 
 		// dump the range
-		fprintf(types[i].fp, "static struct range %s[] = {\n", types[i].name);
+		fprintf(types[i].fp, "static struct char_range %s[] = {\n", types[i].name);
 		charset_dump(types[i].cset, types[i].fp, true);
+		fprintf(types[i].fp, "\t{ -1, -1 },\t// end markers\n");
 		fprintf(types[i].fp, "};\n");
 		fclose(types[i].fp);
 		charset_free(types[i].cset);

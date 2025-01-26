@@ -1,3 +1,8 @@
+2025-01-26         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.3: Revise the API and description.
+	* charset.twjr: Start on changes.
+
 2025-01-13         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr (charset_dump): Add a closing semicolon to

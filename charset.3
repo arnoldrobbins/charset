@@ -1,4 +1,4 @@
-.TH CHARSET 3 "December 25 2024" MinRX
+.TH CHARSET 3 "January 25 2025" MinRX
 .SH NAME
 charset \(em store sets of characters and test against them
 .SH SYNOPSIS
@@ -11,6 +11,13 @@ charset \(em store sets of characters and test against them
 
 typedef struct _charset charset_t;
 
+#define MAX_FIRSTBYTES .\^.\^.
+
+typedef struct {
+	bool firstbytes[MAX_FIRSTBYTES];
+	char maxchar;
+} charset_firstbytes_t;
+
 // error code values:
 enum {
 	CSET_SUCCESS = 0,		// no problems
@@ -22,7 +29,7 @@ enum {
 	CSET_ERANGE,		// Corresponds to REG_ERANGE
 };
 
-charset_t *charset_create(int *errcode);
+charset_t *charset_create(int *errcode, int mb_cur_max, bool is_utf8);
 
 int charset_add_range(charset_t *set, int32_t first, int32_t last);
 int charset_add_char(charset_t *set, int32_t wc);
@@ -30,11 +37,17 @@ int charset_add_cclass(charset_t *set, const char *cclass);
 int charset_add_equiv(charset_t *set, int32_t equiv);
 int charset_add_collate(charset_t *set, const int32_t *collate);
 int charset_set_no_newline(charset_t *set, bool no_newline);
-int charset_invert(charset_t *set);
+
+charset_t *charset_invert(charset_t *set, int *errcode);
+charset_t *charset_copy(charset_t *orig, int *errcode);
+int charset_merge(charset *dest, charset *src);
+
+int charset_finalize(charset *set);
 
 bool charset_in_set(charset_t *set, int32_t wc);
+charset_firstbytes_t charset_firstbytes(charset *set, int *errcode);
 
-void charset_dump(const charset_t *set, FILE *fp);
+void charset_dump(const charset_t *set, FILE *fp, bool use_c_format);
 int charset_free(const charset_t *set);
 .fi
 .ft R
@@ -58,7 +71,7 @@ It is also the responsibility of the caller to deal with case (in)variance.
 I.e., the caller must separately add both upper- and lower-case variants of a character
 to the
 .I charset
-if that is the semantics that are needed (such as the \f(CWREG_ICASE\fP flag
+if that is the required semantics (such as the \f(CWREG_ICASE\fP flag
 from
 .IR regex (3)).
 .PP
@@ -70,12 +83,16 @@ if something should go wrong.
 .PP
 The functions are as follows:
 .TP
-\f(CWcharset_t *charset_create(int *errcode);\fP
+\f(CWcharset_t *charset_create(int *errcode, int mb_cur_max, bool is_utf8);\fP
 Create a
 .I charset
 and return a pointer to it.
 Returns non-\f(CWNULL\fP upon success or \f(CWNULL\fP if something went wrong.
 In the latter case, \f(CW*errcode\fP is filled with the error.
+\f(CWmb_cur_max\fP should be the current value for \f(CWMB_CUR_MAX\fP,
+and \f(CWis_utf8\fP should be \f(CWtrue\fP if the current locale
+is a UTF-8 locale.  It's up to the caller to determine (and possibly
+cache) these values in advance.
 .TP
 \f(CWint charset_add_range(charset_t *set, int32_t first, int32_t last);\fP
 Add the characters in the range \f(CWfirst\fP to \f(CWlast\fP to the
@@ -95,7 +112,6 @@ the enclosing \f(CW[:\fP and \f(CW:]\fP of regular expression syntax.
 \f(CWint charset_add_equiv(charset_t *set, int32_t equiv);\fP
 Add the given equivalence class \f(CWequiv\fP to the set. This should be a
 a single wide character.
-.PD
 .TP
 \f(CWint charset_add_collate(charset_t *set, const int32_t *collate);\fP
 Add the given collating sequence \f(CWcollate\fP
@@ -109,37 +125,90 @@ Set the internal ``no newline'' flag to the value of \f(CWno_newline\fP.
 In some cases, newline should not be allowed to match dot; this routine
 provides control of this feature.
 .TP
-\f(CWint charset_invert(charset_t *set);\fP
-Cause \f(CWcharset_in_set()\fP to return \f(CWtrue\fP if its given wide character is
-.I not
-in the set.
-It is possible to add more characters to the set after calling
-this function, as long as \f(CWcharset_in_set()\fP has not yet been called.
-This operation
-.I cannot
-be undone.
+\f(CWcharset_t *charset_invert(charset_t *set, int *errcode);\fP
+Return a pointer to a new 
+.I charset
+where the sense of the current set of characters and ranges
+that were previously added to \f(CWset\fP are inverted. In other words, characters
+that would cause
+\f(CWcharset_in_set()\fP to return \f(CWtrue\fP for the original
+set will return false for the new set.
+This operation finalizes the original set. (See below for more information on
+finalization.)
+If an error occurs, it returns \f(CWNULL\fP and the error code
+is placed in \f(CW*errcode\fP.
+.TP
+\f(CWcharset_t *charset_copy(charset_t *orig, int *errcode);\fP
+Return a pointer to a new
+.I charset
+which is a copy of the orignal one.
+Finalization is not done for either set.
+(However, if you know you won't change the original, you
+should finalize it yourself, this can save space.)
+If an error occurs, it returns \f(CWNULL\fP and the error code
+is placed in \f(CW*errcode\fP.
+.TP
+\f(CWint charset_merge(charset *dest, charset *src);\fP
+Merge the contents of \f(CW*src\fP into the contents
+of \f(CW*dest\fP.
+\f(CW*dest\fP should not have been finalized.
+.TP
+\f(CWint charset_finalize(charset *set);\fP
+Finalize the set. See the discussion below.
 .TP
 \f(CWbool charset_in_set(charset_t *set, int32_t wc);\fP
 Returns \f(CWtrue\fP if \f(CWwc\fP is in the set, or \f(CWfalse\fP if something went wrong.
+This operation finalizes the set.
 .TP
-\f(CWvoid charset_dump(const charset_t *set, FILE *fp);\fP
+\f(CWcharset_firstbytes_t charset_firstbytes(charset *set, int *errcode);\fP
+Return a \f(CWcharset_firstbytes_t\fP structure representing the
+possible first bytes of all the wide characters in the set.
+This operation assumes that the current character set is Unicode
+and the character set encoding is UTF-8.
+This operation finalizes the set.
+If there are no entries in the \f(CWfirstbytes\fP array,
+the \f(CWmaxchar\fP member will be set to \-1.
+.TP
+\f(CWvoid charset_dump(const charset_t *set, FILE *fp, bool use_c_format);\fP
 Dump the internal data structures of \f(CWset\fP to \f(CWfp\fP.
 This is mainly for debugging and testing.
+If \f(CWuse_c_format\fP is true, the data is dumped as initializers
+for an array of structures holding ranges. This is mainly for
+use in additional development.
 .TP
 \f(CWint charset_free(const charset_t *set);\fP
 Release the storage used by \f(CWset\fP.
 .PP
-It is an error to attempt
-to continue adding entities to a
-.IR charset\^ ,
-to set the ``no newline'' flag,
-or to attempt to invert the character set,
-after \f(CWcharset_in_set()\fP has been called.
-.PP
 To create a set that ``matches all characters,'' you may
 simply add a range from zero to the maximum valid value,
 or create an empty set and invert it.
+.SS Finalization
+.PP
+Bracket expressions can be written in ways that are
+repetitive or silly, but still valid. For example,
+\f(CW[a-e[:lower:]0-9c-f]\fP.  The
+.I charset
+functions track the individual characters, ranges, and
+other items that were added to them as they're added.
+When it's necessary to check if a character is present
+in the set, or for some of the other operations listed
+above, the set is
+.IR finalized .
+This means that the data structure is compacted and
+reduced to the minimum necessary for determining if
+a character is present.
+.PP
+Once a set has been finalized,
+it is an error to attempt
+to continue adding entities to it,
+or to set the ``no newline'' flag.
 .\" .SH EXAMPLE
+.SH NOTES
+\f(CWcharset_create()\fP requires passing in the value
+of \f(CWMB_CUR_MAX\fP instead of calling it directly,
+because, at least on GLIBC systems, this macro hides
+a function call. Thus it's best if the caller caches
+this value (if possible) and passes it to \f(CWcharset_create()\fP.
 .SH "SEE ALSO"
 .IR regex (3),
 .IR wctype (3),
@@ -150,7 +219,7 @@ available from
 Arnold Robbins,
 .BR arnold@skeeve.com .
 .SH COPYING PERMISSIONS
-Copyright \(co 2023, 2024,
+Copyright \(co 2023, 2024, 2025,
 Arnold David Robbins.
 .PP
 Redistribution and use in source and binary forms, with or without
