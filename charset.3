@@ -1,4 +1,4 @@
-.TH CHARSET 3 "January 25 2025" MinRX
+.TH CHARSET 3 "January 26 2025" MinRX
 .SH NAME
 charset \(em store sets of characters and test against them
 .SH SYNOPSIS
@@ -39,7 +39,7 @@ int charset_add_collate(charset_t *set, const int32_t *collate);
 int charset_set_no_newline(charset_t *set, bool no_newline);
 
 charset_t *charset_invert(charset_t *set, int *errcode);
-charset_t *charset_copy(charset_t *orig, int *errcode);
+charset_t *charset_copy(charset_t *set, int *errcode);
 int charset_merge(charset *dest, charset *src);
 
 int charset_finalize(charset *set);
@@ -138,7 +138,7 @@ finalization.)
 If an error occurs, it returns \f(CWNULL\fP and the error code
 is placed in \f(CW*errcode\fP.
 .TP
-\f(CWcharset_t *charset_copy(charset_t *orig, int *errcode);\fP
+\f(CWcharset_t *charset_copy(charset_t *set, int *errcode);\fP
 Return a pointer to a new
 .I charset
 which is a copy of the orignal one.
