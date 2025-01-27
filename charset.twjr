@@ -320,7 +320,7 @@ a set item:
 
 @<data structures@>=
 typedef struct set_item {
-		int32_t start, end;
+	int32_t start, end;
 } set_item;
 @
 
@@ -346,6 +346,7 @@ struct _charset {
 	int32_t  *chars;            // Characters added to the set
 	size_t   nelems;            // Number of elements (items) in use
 	size_t   allocated;         // Number allocated
+	size_t	 nelems8bit;		// Number of elements covering 0-255
 	set_item *items;            // Array of items
 };
 @
@@ -517,7 +518,7 @@ The left hand value must be less than or equal
 to the right hand value.
 
 Here too, a user can write something (silly) like @code{[a-eqra-ezhb-d]}
-This will initially create three @code{RANGE_ITEM}s, @code{a-e}, @code{a-e} (a
+This will initially create three @code{set_item}s, @code{a-e}, @code{a-e} (a
 second time) and @code{b-d}.  The final range is subsumed within the
 first one.  Finalizing the data structure cleans all this up so that in
 the end there is only one @code{set_item}, for @code{a-e}.
@@ -593,12 +594,16 @@ charset_invert(charset_t *set, int *errcode)
 	if (errcode == NULL)
 		return NULL;
 
-	@<check for NULL pointer@>
+	if (set == NULL) {
+		*errcode = CSET_EBADPTR;
+		return NULL;
+	}
+
 	if (! set->finalized) {
-		int ret = charset_finalize(set);
+		charset_finalize(set);
 
 		if (! set->finalized) {
-			*errcode = ret;
+			*errcode = CSET_ESPACE;	// make a guess
 			return NULL;
 		}
 	}
@@ -628,7 +633,6 @@ charset_invert(charset_t *set, int *errcode)
 	if (low <= MAX_CODE_POINT) {
 			if ((ret = charset_add_range(newset, low, MAX_CODE_POINT)) != CSET_SUCCESS)
 				goto fail;
-		}
 	}
 
 	*errcode = CSET_SUCCESS;
@@ -4148,7 +4152,7 @@ static struct _class_data {
 	wctype_t	wctype;				// from wctype("alpha")
 	set_item	*data[2];			// alpha, NULL
 } class_data[] = {
-	{ "alnum",	isalnum,	0,	{ alpha, digit } },
+	{ "alnum",	isalnum,	0,	{ digit, alpha } },
 	{ "alpha",	isalpha,	0,	{ alpha, NULL } },
 	{ "blank",	isblank,	0,	{ blank, NULL } },
 	{ "cntrl",	iscntrl,	0,	{ cntrl, NULL } },
@@ -4227,7 +4231,7 @@ data[1] = class_data[index].data[1];
 for (int i = 0; i < 2; i++) {
 	if (data[i] == NULL)
 		break;
-	for (j = 0; data[i][j].start != -1; j++) {
+	for (int j = 0; data[i][j].start != -1; j++) {
 		int ret = charset_add_range(set, data[i][j].start, data[i][j].end);
 		if (ret != CSET_SUCCESS)
 			return ret;
@@ -4245,7 +4249,7 @@ return wide_char_range_loop(set, cclass, ctype);
 @
 
 @<handle locale-specific standard character class@>=
-wctype_t ctype = class_data[index].ctype;
+wctype_t ctype = class_data[index].wctype;
 if (ctype == 0) {	// haven't checked it yet
 	ctype = wctype(cclass);
 
@@ -4254,7 +4258,7 @@ if (ctype == 0) {	// haven't checked it yet
 }
 
 // all ok..
-class_data[index].ctype = ctype;	// save for next time
+class_data[index].wctype = ctype;	// save for next time
 // this saves the locale + cclass info for possible reuse
 return wide_char_range_loop(set, cclass, ctype);
 @
@@ -4295,13 +4299,13 @@ If we get here, we're in a wide character locale that isn't Unicode.
 So we have to ask the C library to tell us which values match
 the particular character class.
 
-@subsubection Avoiding Recomputing Things
+@subsubsection Avoiding Recomputing Things
 
 We want to avoid doing this more than once for any given combination
 of a locale and character class. To that end, we ``memoize'', building
 a charset and saving it for possible reuse.
 
-Let's talk about how to cache the data. It'd be nice to avoid doing our
+Let's talk about how to cache the data. It'd be nice to avoid doing our own
 hash table, and @i{hsearch}(3), while standard, is kinda yucky.  Instead,
 we'll try to take advantage of the fact that locale names all start with
 one of the 52 letters in the English alphabet. We'll thus have an array
@@ -4311,22 +4315,22 @@ is cute and starts a locale name with some other character.
 @<static data@>=
 static struct _class_cache {
 	const char *name;
-	charset *set;
+	charset_t *set;
 	struct _class_cache *next;	// linked list
 } *class_cache[53];
 @
 
-
 @<helper functions@>=
 /* find_class_in_cache --- lookup and/or create locale + class in the table */
 
-static charset *
-find_class_in_cache(const char *cclass, int *errcode)
+static charset_t *
+find_class_in_cache(charset_t *set, const char *cclass, int *errcode, bool *is_new)
 {
-	assert(cclass != NULL && errcode != NULL);
+	assert(set != NULL && cclass != NULL && errcode != NULL && is_new != NULL);
+	*is_new = true;
 
 	const char *locale = setlocale(LC_CTYPE, NULL);	// query locale
-	char *buf = malloc(strlen(locale) + 1 + strlen(cclass) + 1);
+	char *buf = (char *) malloc(strlen(locale) + 1 + strlen(cclass) + 1);
 	if (buf == NULL) {
 		*errcode = CSET_ESPACE;
 		return NULL;
@@ -4351,7 +4355,8 @@ find_class_in_cache(const char *cclass, int *errcode)
 	} else {
 		for (; pcache != NULL; pcache = pcache->next) {
 			if (strcmp(pcache->name, buf) == 0) {	// found it
-				free(buf);
+				free((void *) buf);
+				*is_new = false;
 				goto done;
 			}
 		}
@@ -4363,12 +4368,12 @@ find_class_in_cache(const char *cclass, int *errcode)
 
 done:
 	*errcode = CSET_SUCCESS;
-	return pache->set;
+	return pcache->set;
 }
 @
 
 @<allocate a new cache entry, fill it in@>=
-pcache = malloc(sizeof(struct _class_cache));
+pcache = (struct _class_cache *) malloc(sizeof(struct _class_cache));
 if (pcache == NULL) {
 	*errcode = CSET_ESPACE;
 	return NULL;
@@ -4378,12 +4383,25 @@ pcache->next = NULL;
 charset_t *newset = charset_create(errcode, set->mb_cur_max, set->is_utf8);
 if (newset == NULL) {
 	*errcode = CSET_ESPACE;
-	free(pcache->name);
+	free((void *) pcache->name);
 	return NULL;
 }
 pcache->set = newset;
 @
 
+We get to this code in two cases. Either we're in a UTF-8 locale but there is a
+supported, non-standard class (such as maybe @code{[:word:]}), or we're in a
+wide character set that isn't Unicode based, even for a standard character class.
+In either case, the @code{iswctype()} function has to work.
+
+The strategy is to loop over all the characters from to @code{MAX_CODE_POINT},
+testing if each value is matches @code{ctype}. If so, it's added to the set.
+The set is then finalized to compact it, and it's merged into the original set.
+
+Since looping over more than 1,100,000 characters is expensive, the new set
+is cached; that's handled above by @code{find_class_in_cache()}.
+
+@strong{FIXME}: Discuss use of mutex.
 
 @<helper functions@>=
 /* wide_char_range_loop --- loop over all possible characters to match a ctype, and cache it */
@@ -4391,6 +4409,26 @@ pcache->set = newset;
 static int
 wide_char_range_loop(charset_t *set, const char *cclass, wctype_t ctype)
 {
+	// FIXME: Need to wrap this function in a mutex
+	int errcode = 0;
+	bool is_new = false;
+	charset_t *newset = find_class_in_cache(set, cclass, & errcode, & is_new);
+
+	if (newset == NULL)
+		return errcode;
+
+	if (is_new) {
+		for (int32_t c = 0; c < MAX_CODE_POINT; c++) {
+			if (iswctype(c, ctype)) {
+				int ret;
+				if ((ret = charset_add_char(newset, c)) != CSET_SUCCESS)
+					return ret;
+			}
+		}
+		charset_finalize(newset);
+	}
+
+	return charset_merge(set, newset);
 }
 @
 
@@ -4409,25 +4447,29 @@ charset_copy(charset_t *set, int *errcode)
 	if (errcode == NULL)
 		return NULL;
 
-	@<check for NULL pointer@>
+	if (set == NULL) {
+		*errcode = CSET_EBADPTR;
+		return NULL;
+	}
+
 	charset_t *newset = charset_create(errcode, set->mb_cur_max, set->is_utf8);
 	if (newset == NULL)
 		return NULL;
 
 	memcpy(newset, set, sizeof(*set));
-	newset->chars = malloc(newset->nchars_allocated * sizeof(int32_t));
+	newset->chars = (int32_t *) malloc(newset->nchars_allocated * sizeof(int32_t));
 	if (newset->chars == NULL) {
 		*errcode = CSET_ESPACE;
-		free(newset);
+		free((void *) newset);
 		return NULL;
 	} else
 		memcpy(newset->chars, set->chars, newset->nchars_allocated * sizeof(int32_t));
 
-	newset->items = malloc(newset->allocated * sizeof(set_item));
+	newset->items = (set_item *) malloc(newset->allocated * sizeof(set_item));
 	if (newset->items == NULL) {
 		*errcode = CSET_ESPACE;
-		free(newset->chars);
-		free(newset);
+		free((void *) newset->chars);
+		free((void *) newset);
 		return NULL;
 	} else
 		memcpy(newset->items, set->items, newset->allocated * sizeof(set_item));
@@ -4448,7 +4490,7 @@ Mergin
 
 @<API functions@>=
 int
-charset_merge(charset *set /*dest*/, charset *src)
+charset_merge(charset_t *set /*dest*/, charset_t *src)
 {
 	@<check for NULL pointer@>
 	if (src == NULL)
@@ -4458,13 +4500,13 @@ charset_merge(charset *set /*dest*/, charset *src)
 	int new_char_count = set->nchars_inuse + src->nchars_inuse + 1;
 	int new_item_count = set->nelems + src->nelems;
 
-	int32_t *new_chars = malloc(new_char_count * sizeof(int32_t));
+	int32_t *new_chars = (int32_t *) malloc(new_char_count * sizeof(int32_t));
 	if (new_chars == NULL)
 		return CSET_ESPACE;
 
-	set_item *new_items = malloc(new_item_count * sizeof(set_item));
+	set_item *new_items = (set_item *) malloc(new_item_count * sizeof(set_item));
 	if (new_items == NULL) {
-		free(new_chars);
+		free((void *) new_chars);
 		return CSET_ESPACE;
 	}
 
@@ -4477,12 +4519,12 @@ charset_merge(charset *set /*dest*/, charset *src)
 	memcpy(new_items + set->nelems, src->items, src->nelems * sizeof(set_item));
 
 	// now update dest
-	free(set->chars);
+	free((void *) set->chars);
 	set->chars = new_chars;
 	set->nchars_inuse = new_char_count - 1;
 	set->nchars_allocated = new_char_count;
 
-	free(set->items);
+	free((void *) set->items);
 	set->items = new_items;
 	set->nelems = set->allocated = new_item_count;
 
@@ -4491,7 +4533,7 @@ charset_merge(charset *set /*dest*/, charset *src)
 @
 
 @<API declarations@>=
-int charset_merge(charset *dest, charset *src);
+int charset_merge(charset_t *dest, charset_t *src);
 @
 
 @node Using the charset_t
@@ -4572,9 +4614,6 @@ keep things simple.
 static bool
 is_found(const charset_t *set, int32_t the_char)
 {
-	set_item *items = set->items;
-	int i;
-
 	@<Check for empty set@>
 	@<Special case search for only one item in the set@>
 	@<Search in the ranges@>
@@ -4592,16 +4631,29 @@ if (set->items == NULL)		// empty set, can't match
 @
 
 Searching for a matching @code{set_item} is
-done using binary search:
+done using binary search.
+We provide (what we hope is) an optimization.
+On the assumption that most text is ASCII,
+when the character itself is less than 128,
+we only binary search the set of ranges that covers
+zero through 128.  For the large sets of ranges,
+such as @samp{alpha}, @samp{punct} and so on, this
+should make a significant difference.
+(For EBCDIC, @code{set->mb_cur_max} will be one,
+so there will automatically be only a small set
+of ranges.)
 
 @<Search in the ranges@>=
 // binary search to see if we have it
 set_item *found;
 set_item key;
-key.item_type = RANGE_ITEM;
 key.start = key.end = the_char;
 
-found = bsearch(& key, set->items, set->nelems,
+size_t nelems = set->nelems;
+if (the_char < 128 && set->nelems8bit < set->nelems)
+	nelems = set->nelems8bit;
+
+found = bsearch(& key, set->items, nelems,
 				sizeof(set_item), item_compare_for_searching);
 
 return found != NULL;
@@ -4651,6 +4703,75 @@ We need the header file for assertions:
 #include <assert.h>
 @
 
+@node Firstbytes
+@section Getting The Prefix Bytes
+
+Blah blah ...
+
+@<API functions@>=
+/* charset_firstbytes --- return the set of prefix bytes for the range */
+
+charset_firstbytes_t
+charset_firstbytes(charset_t *set, int *errcode)
+{
+	charset_firstbytes_t result;
+	memset(& result, 0, sizeof(result));
+
+	if (errcode == NULL)
+		goto done;
+
+	if (set == NULL) {
+		*errcode = CSET_EBADPTR;
+		goto done;
+	}
+
+	if (! set->finalized) {
+		charset_finalize(set);
+
+		if (! set->finalized) {
+			*errcode = CSET_ESPACE;	// guess...
+			goto done;
+		}
+	}
+
+	for (int i = 0; i < set->nelems; i++) {
+		int32_t low = utfprefix(set->items[i].start);
+		int32_t high = utfprefix(set->items[i].end);
+
+		for (int b = low; b <= high; b++)
+			result.bytes[b] = true;
+	}
+
+done:
+	return result;
+}
+@
+
+@<helper functions@>=
+static unsigned int
+utfprefix(int32_t wc)
+{
+	if (wc < 0x80)
+		return wc;
+	if (wc < 0x800)
+		return 0xC0 + (wc >> 6);
+	if (wc < 0x10000)
+		return 0xE0 + (wc >> 12);
+	if (wc < 0x100000)
+		return 0xF0 + (wc >> 18);
+	return 0xF4;
+}
+@
+
+@<API declarations@>=
+#define MAX_FIRSTBYTES	256
+typedef struct {
+	bool bytes[MAX_FIRSTBYTES];
+} charset_firstbytes_t;
+
+charset_firstbytes_t charset_firstbytes(charset_t *set, int *errcode);
+@
+
 @node Printing
 @section Printing The Data Structure
 
@@ -4692,10 +4813,15 @@ human readable fashion:
 @<dump in debug format@>=
 fprintf(fp, "no_newlines = %s\n", boolval[!! set->no_newlines]);
 fprintf(fp, "finalized = %s\n", boolval[!! set->finalized]);
+fprintf(fp, "is_utf8 = %s\n", boolval[!! set->is_utf8]);
+fprintf(fp, "mb_cur_max = %d\n", set->mb_cur_max);
+fprintf(fp, "nchars_inuse = %zd\n", set->nchars_inuse);
+fprintf(fp, "nelems = %zd\n", set->nelems);
+fprintf(fp, "nelems8bit = %zd\n", set->nelems8bit);
 
 for (int i = 0; i < set->nelems; i++) {
-	fprintf(fp, "%3d. RANGE: start = L'%lc', end = L'%lc'\n",
-		i, items[i].start, items[i].end);
+	fprintf(fp, "%3d. RANGE: start = L'%lc' (%d), end = L'%lc' (%d)\n",
+		i, items[i].start, items[i].start, items[i].end, items[i].end);
 }
 @
 
@@ -4703,7 +4829,6 @@ Dumping the ranges in C format is simpler:
 
 @<dump ranges in C format@>=
 for (int i = 0; i < set->nelems; i++) {
-	assert(items[i].item_type == RANGE_ITEM);
 	fprintf(fp, "\t{ %d, %d },\n", items[i].start, items[i].end);
 }
 @
@@ -4734,6 +4859,7 @@ charset_finalize(charset_t *set)
 	@<sort wide character list@>
 	@<condense wide character list into @code{set_item}s@>
 	@<condense final array of @code{set_item}s@>
+	@<find index of last 8 bit value range@>
 	set->finalized = true;
 }
 @
@@ -4753,8 +4879,8 @@ The comparison function is trivial:
 static int
 int32_t_compare(const void *l, const void *r)
 {
-	int32_t_t *left = (wint_t *) l;
-	int32_t_t *right = (wint_t *) r;
+	int32_t *left = (int32_t *) l;
+	int32_t *right = (int32_t *) r;
 
 	return *left - *right;
 }
@@ -4950,6 +5076,19 @@ i--;	// compensate for loop, continue checking at current position
 j = i + 1;
 @
 
+Finally, we want to see if there is a point where the ranges
+are outside of ASCII:
+
+@<find index of last 8 bit value range@>=
+set->nelems8bit = set->nelems;
+for (int i = 0; i < set->nelems; i++) {
+	if (set->items[i].start >= 128 && i > 0) {
+		set->nelems8bit = i;	// this is a count, not an index
+		break;
+	}
+}
+@
+
 @node Source Files
 @chapter Source Files
 
@@ -4985,9 +5124,9 @@ typedef struct _charset charset_t;
 
 @<macros@>
 
-@<static data@>
-
 @<data structures@>
+
+@<static data@>
 @<helper functions@>
 @<API functions@>
 @
@@ -5032,9 +5171,10 @@ We include the standard header files that we'll need:
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-// #include <wctype.h>
-// #include <wchar.h>
-// #include <locale.h>
+#include <ctype.h>
+#include <wctype.h>
+#include <wchar.h>
+#include <locale.h>
 @
 
 @node test driver
@@ -5305,6 +5445,7 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 	bool escapes_allowed = (flags & CS_ESCAPES_ALLOWED) != 0;
 	bool no_newlines = (flags & CS_NO_NEWLINES) != 0;
 	bool do_dot = (flags & CS_DOT) != 0;
+	bool inverted = false;
 	int result;
 
 	if (expr == NULL) {
@@ -5313,7 +5454,7 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 		return NULL;
 	}
 
-	charset_t *bracket_expr = charset_create(errcode);
+	charset_t *bracket_expr = charset_create(errcode, MB_CUR_MAX, true);
 	if (bracket_expr == NULL || *errcode != CSET_SUCCESS)
 		return NULL;
 
@@ -5326,10 +5467,15 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 			result = charset_add_char(bracket_expr, L'\n');
 			@<check for failure@>
 		}
-		result = charset_invert(bracket_expr);
-		@<check for failure@>
+		int errc = 0;
+		charset_t *newset = charset_invert(bracket_expr, & errc);
+		if (newset == NULL) {
+			*errcode = errc;
+			goto fail;
+		}
 
-		return bracket_expr;
+		charset_free(bracket_expr);
+		return newset;
 	}
 
 	if (a_wchar != L'[') {
@@ -5341,8 +5487,7 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 	while (cp < last) {
 		@<get current wide character@>
 		if (at_first_char && cur_wchar == L'^') {
-			result = charset_invert(bracket_expr);
-			@<check for failure@>
+			inverted = true;	// invert the set once it's built.
 
 			// get the next character and then fall through
 			@<get current wide character@>
@@ -5436,6 +5581,16 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 	if (cur_wchar != L']') {
 		*errcode = CSET_ERANGE;	// not perfect
 		goto fail;
+	}
+
+	if (inverted) {
+		charset_t *newset = charset_invert(bracket_expr, errcode);
+		if (newset == NULL)
+			goto fail;
+
+		charset_free(bracket_expr);
+		bracket_expr = newset;
+		// falll through to return
 	}
 
 	return bracket_expr;
@@ -5596,14 +5751,14 @@ find_ctype_info(const char *cp,
 	@<get a wide character@>
 	if (a_wchar != L']') {
 		*errcode = CSET_ECTYPE;
-		free(w_name_buf);
+		free((void *) w_name_buf);
 		return false;
 	}
 
 	name_buf = (char *) malloc(len + 1);
 	if (name_buf == NULL) {
 		*errcode = CSET_ESPACE;
-		free(w_name_buf);
+		free((void *) w_name_buf);
 		return false;
 	}
 	memset(name_buf, 0, len + 1);
@@ -5614,7 +5769,7 @@ find_ctype_info(const char *cp,
 	wcsrtombs(name_buf, & name_start, len + 1, & mbs2);
 
 	*the_name = name_buf;
-	free(w_name_buf);
+	free((void *) w_name_buf);
 
 	*errcode = CSET_SUCCESS;
 
@@ -5890,7 +6045,7 @@ process(const char *localename)
 		(void) charset_in_set(types[i].cset, L'A');
 
 		// dump the range
-		fprintf(types[i].fp, "static struct char_range %s[] = {\n", types[i].name);
+		fprintf(types[i].fp, "static set_item %s[] = {\n", types[i].name);
 		charset_dump(types[i].cset, types[i].fp, true);
 		fprintf(types[i].fp, "\t{ -1, -1 },\t// end markers\n");
 		fprintf(types[i].fp, "};\n");
@@ -5918,7 +6073,7 @@ for (i = 0; types[i].name != NULL; i++) {
 	types[i].fp = fp;
 	types[i].type = wctype(types[i].name);
 	int errcode = 0;
-	types[i].cset = charset_create(& errcode);
+	types[i].cset = charset_create(& errcode, MB_CUR_MAX, true);
 }
 @
 

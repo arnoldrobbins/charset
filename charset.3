@@ -15,7 +15,6 @@ typedef struct _charset charset_t;
 
 typedef struct {
 	bool firstbytes[MAX_FIRSTBYTES];
-	char maxchar;
 } charset_firstbytes_t;
 
 // error code values:
@@ -166,8 +165,6 @@ possible first bytes of all the wide characters in the set.
 This operation assumes that the current character set is Unicode
 and the character set encoding is UTF-8.
 This operation finalizes the set.
-If there are no entries in the \f(CWfirstbytes\fP array,
-the \f(CWmaxchar\fP member will be set to \-1.
 .TP
 \f(CWvoid charset_dump(const charset_t *set, FILE *fp, bool use_c_format);\fP
 Dump the internal data structures of \f(CWset\fP to \f(CWfp\fP.

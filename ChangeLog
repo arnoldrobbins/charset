@@ -1,3 +1,9 @@
+2025-01-27         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.3: Minor updates.
+	* charset.twjr: Changes are code complete.
+	* tests.good: Updated.
+
 2025-01-26         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.3: Minor updates.
