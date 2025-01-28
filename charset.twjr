@@ -4456,7 +4456,7 @@ charset_copy(charset_t *set, int *errcode)
 	if (newset == NULL)
 		return NULL;
 
-	memcpy(newset, set, sizeof(*set));
+	*newset = *set;
 	newset->chars = (int32_t *) malloc(newset->nchars_allocated * sizeof(int32_t));
 	if (newset->chars == NULL) {
 		*errcode = CSET_ESPACE;
@@ -4733,14 +4733,29 @@ charset_firstbytes(charset_t *set, int *errcode)
 			goto done;
 		}
 	}
+#define min(x, y) ((x) < (y) ? (x) : (y))
 
-	for (int i = 0; i < set->nelems; i++) {
-		int32_t low = utfprefix(set->items[i].start);
-		int32_t high = utfprefix(set->items[i].end);
+	if (set->mb_cur_max == 1) {
+		for (int i = 0; i < set->nelems; i++) {
+			if (set->items[i].start > 255)
+				break;
+			int32_t low = set->items[i].start;
+			int32_t high = min(set->items[i].end, 255);
 
-		for (int b = low; b <= high; b++)
-			result.bytes[b] = true;
+			for (int b = low; b <= high; b++)
+				result.bytes[b] = true;
+		}
+	} else {
+		for (int i = 0; i < set->nelems; i++) {
+			int32_t low = utfprefix(set->items[i].start);
+			int32_t high = utfprefix(set->items[i].end);
+
+			for (int b = low; b <= high; b++)
+				result.bytes[b] = true;
+		}
 	}
+#undef min
+	*errcode = CSET_SUCCESS;
 
 done:
 	return result;

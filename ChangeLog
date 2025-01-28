@@ -1,3 +1,9 @@
+2025-01-28         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr (charset_firstbytes): Handle bytes vs.
+	UTF correctly.
+	(charset_copy): Small fix.
+
 2025-01-27         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.3: Minor updates.
