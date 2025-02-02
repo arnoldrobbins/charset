@@ -616,7 +616,9 @@ charset_invert(charset_t *set, int *errcode)
 
 	if (set->nelems == 0) {	// was empty
 		int ret = charset_add_range(newset, 0, MAX_CODE_POINT);
-		if (ret != CSET_SUCCESS)
+		if (ret == CSET_SUCCESS)
+			goto done;
+		else
 			goto fail;
 	}
 
@@ -635,6 +637,7 @@ charset_invert(charset_t *set, int *errcode)
 				goto fail;
 	}
 
+done:
 	*errcode = CSET_SUCCESS;
 	return newset;
 fail:
@@ -4497,6 +4500,9 @@ charset_merge(charset_t *set /*dest*/, charset_t *src)
 		return CSET_EBADPTR;
 	@<check if finalized@>
 
+	if (src->nelems == 0 && src->nchars_inuse == 0)
+		return CSET_SUCCESS;
+
 	int new_char_count = set->nchars_inuse + src->nchars_inuse + 1;
 	int new_item_count = set->nelems + src->nelems;
 
@@ -4519,12 +4525,14 @@ charset_merge(charset_t *set /*dest*/, charset_t *src)
 	memcpy(new_items + set->nelems, src->items, src->nelems * sizeof(set_item));
 
 	// now update dest
-	free((void *) set->chars);
+	if (set->chars != NULL)
+		free((void *) set->chars);
 	set->chars = new_chars;
 	set->nchars_inuse = new_char_count - 1;
 	set->nchars_allocated = new_char_count;
 
-	free((void *) set->items);
+	if (set->items != NULL)
+		free((void *) set->items);
 	set->items = new_items;
 	set->nelems = set->allocated = new_item_count;
 

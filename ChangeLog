@@ -1,3 +1,10 @@
+2025-02-02         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr (charset_merge): Do nothing if source
+	is empty. Check for null pointers before freeing old ones.
+	(charset_invert): For empty range, add the new full
+	range and then go to done.
+
 2025-01-28         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr (charset_firstbytes): Handle bytes vs.
