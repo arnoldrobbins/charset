@@ -1,6 +1,7 @@
 2025-02-03         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr (charset_invert): Minor fixes.
+	(charset_firstbytes): Use uin32_t for the range checks.
 
 2025-02-02         Arnold D. Robbins     <arnold@skeeve.com>
 

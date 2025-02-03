@@ -4748,16 +4748,16 @@ charset_firstbytes(charset_t *set, int *errcode)
 		for (int i = 0; i < set->nelems; i++) {
 			if (set->items[i].start > 255)
 				break;
-			int32_t low = set->items[i].start;
-			int32_t high = min(set->items[i].end, 255);
+			uint32_t low = set->items[i].start;
+			uint32_t high = min(set->items[i].end, 255);
 
 			for (int b = low; b <= high; b++)
 				result.bytes[b] = true;
 		}
 	} else {
 		for (int i = 0; i < set->nelems; i++) {
-			int32_t low = utfprefix(set->items[i].start);
-			int32_t high = utfprefix(set->items[i].end);
+			uint32_t low = utfprefix(set->items[i].start);
+			uint32_t high = utfprefix(set->items[i].end);
 
 			for (int b = low; b <= high; b++)
 				result.bytes[b] = true;
