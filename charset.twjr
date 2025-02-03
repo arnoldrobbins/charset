@@ -809,42 +809,56 @@ omitted many hundreds of lines of ranges; they are included
 in the generated code.
 
 @<static data@>=
-static set_item digit[] = {
+static const set_item digit[] = {
 	{ 48, 57 },
 	{ -1, -1 },	// end markers
 };
-static set_item cntrl[] = {
+static const set_item cntrl[] = {
 	{ 0, 31 },
 	{ 127, 159 },
 	{ 8232, 8233 },
 	{ -1, -1 },	// end markers
 };
-static set_item xdigit[] = {
+static const set_item xdigit[] = {
 	{ 48, 57 },
 	{ 65, 70 },
 	{ 97, 102 },
 	{ -1, -1 },	// end markers
 };
-static set_item print_additional[] = {
+static const set_item print_additional[] = {
 	{ 32, 126 },
+@ifweave
+	...
+@end ifweave
+@iftangle
 	{ 5120, 5788 },
 	{ 8192, 8231 },
 	{ 8234, 8292 },
 	{ 12288, 12351 },
+@end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item blank[] = {
+static const set_item blank[] = {
 	{ 9, 9 },
+@ifweave
+	...
+@end ifweave
+@iftangle
 	{ 32, 32 },
 	{ 5760, 5760 },
 	{ 8192, 8198 },
 	{ 8200, 8202 },
 	{ 8287, 8287 },
 	{ 12288, 12288 },
+@end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item graph_additional[] = {
+static const set_item graph_additional[] = {
 	{ 33, 126 },
+@ifweave
+	...
+@end ifweave
+@iftangle
 	{ 5120, 5759 },
 	{ 5761, 5788 },
 	{ 8199, 8199 },
@@ -852,10 +866,15 @@ static set_item graph_additional[] = {
 	{ 8234, 8286 },
 	{ 8288, 8292 },
 	{ 12289, 12351 },
+@end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item space[] = {
+static const set_item space[] = {
 	{ 9, 13 },
+@ifweave
+	...
+@end ifweave
+@iftangle
 	{ 32, 32 },
 	{ 5760, 5760 },
 	{ 8192, 8198 },
@@ -863,9 +882,10 @@ static set_item space[] = {
 	{ 8232, 8233 },
 	{ 8287, 8287 },
 	{ 12288, 12288 },
+@end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item punct[] = {
+static const set_item punct[] = {
 	{ 33, 47 },
 @ifweave
 	...
@@ -1330,7 +1350,7 @@ static set_item punct[] = {
 @end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item upper[] = {
+static const set_item upper[] = {
 	{ 65, 90 },
 @ifweave
 	...
@@ -1992,7 +2012,7 @@ static set_item upper[] = {
 @end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item lower[] = {
+static const set_item lower[] = {
 	{ 97, 122 },
 @ifweave
 	...
@@ -2668,7 +2688,7 @@ static set_item lower[] = {
 @end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item print_graph_common[] = {
+static const set_item print_graph_common[] = {
 	{ 160, 887 },
 @ifweave
 	...
@@ -3371,7 +3391,7 @@ static set_item print_graph_common[] = {
 @end iftangle
 	{ -1, -1 },	// end markers
 };
-static set_item alpha[] = {
+static const set_item alpha[] = {
 	{ 65, 90 },
 @ifweave
 	...
@@ -4137,7 +4157,7 @@ static set_item alpha[] = {
 	{ 196608, 201546 },
 @end iftangle
 	{ -1, -1 },	// end markers
-};
+	};
 @
 
 @node Accessing Range Data
@@ -4154,7 +4174,7 @@ static struct _class_data {
 	const char *name;				// e.g., "alpha"
 	int (*charcheckfunc)(int c);	// function pointer, e.g., isalpha
 	wctype_t	wctype;				// from wctype("alpha")
-	set_item	*data[2];			// alpha, NULL
+	const set_item	*data[2];		// alpha, NULL
 } class_data[] = {
 	{ "alnum",	isalnum,	0,	{ digit, alpha } },
 	{ "alpha",	isalpha,	0,	{ alpha, NULL } },
@@ -4227,7 +4247,7 @@ for (int32_t i = 0; i < 256; i++) {
 @
 
 @<add predefined ranges@>=
-set_item *data[2];
+const set_item *data[2];
 
 data[0] = class_data[index].data[0];
 data[1] = class_data[index].data[1];

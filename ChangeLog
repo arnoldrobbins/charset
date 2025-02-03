@@ -2,6 +2,8 @@
 
 	* charset.twjr (charset_invert): Minor fixes.
 	(charset_firstbytes): Use uin32_t for the range checks.
+	(space, digit, etc.): Make const. Adjust uses. Reduce the
+	amount of constants printed in the PDF.
 
 2025-02-02         Arnold D. Robbins     <arnold@skeeve.com>
 
