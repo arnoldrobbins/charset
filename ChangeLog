@@ -1,3 +1,10 @@
+2025-02-06         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr (charset_merge): Improve the logic to handle
+	sets with either no chars are no set_items or both, on
+	both sides (dest and src).
+	Additional code and prose cleanups.
+
 2025-02-03         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr (charset_invert): Minor fixes.

@@ -18,7 +18,7 @@
 @c This sets the edition of the document.
 
 @c These apply across the board.
-@set UPDATE-MONTH January, 2025
+@set UPDATE-MONTH February, 2025
 @set EDITION 0.4
 
 @set TITLE Efficient Searching of Large Character Sets --- Take Two And A Half
@@ -4481,22 +4481,26 @@ charset_copy(charset_t *set, int *errcode)
 		return NULL;
 
 	*newset = *set;
-	newset->chars = (int32_t *) malloc(newset->nchars_allocated * sizeof(int32_t));
-	if (newset->chars == NULL) {
-		*errcode = CSET_ESPACE;
-		free((void *) newset);
-		return NULL;
-	} else
-		memcpy(newset->chars, set->chars, newset->nchars_allocated * sizeof(int32_t));
+	if (newset->nchars_allocated > 0) {
+		newset->chars = (int32_t *) malloc(newset->nchars_allocated * sizeof(int32_t));
+		if (newset->chars == NULL) {
+			*errcode = CSET_ESPACE;
+			free((void *) newset);
+			return NULL;
+		} else
+			memcpy(newset->chars, set->chars, newset->nchars_allocated * sizeof(int32_t));
+	}
 
-	newset->items = (set_item *) malloc(newset->allocated * sizeof(set_item));
-	if (newset->items == NULL) {
-		*errcode = CSET_ESPACE;
-		free((void *) newset->chars);
-		free((void *) newset);
-		return NULL;
-	} else
-		memcpy(newset->items, set->items, newset->allocated * sizeof(set_item));
+	if (newset->allocated > 0) {
+		newset->items = (set_item *) malloc(newset->allocated * sizeof(set_item));
+		if (newset->items == NULL) {
+			*errcode = CSET_ESPACE;
+			free((void *) newset->chars);
+			free((void *) newset);
+			return NULL;
+		} else
+			memcpy(newset->items, set->items, newset->allocated * sizeof(set_item));
+	}
 
 	*errcode = CSET_SUCCESS;
 	return newset;
@@ -4510,40 +4514,61 @@ charset_t *charset_copy(charset_t *set, int *errcode);
 @node Merging charsets
 @section Merging One @code{charset_t} Into Another
 
-Mergin
+As part of how MinRX works, it needs the ability to merge
+one charset into another.  In C++ this shows up as the
+@samp{|=} operator on the MinRX @code{CSet} class.
+
+This function can be called with charsets that are empty,
+especially as the target of the merge, and so it needs to be
+careful to make sure that the merged set of characters and the merged set
+of items are non-zero in size before allocating any memory for them.
+
+This check is particularly necessary on at least GLIBC systems,
+where a call to @samp{malloc(0)} can return a valid pointer!
+
+The first thing done is to use a variable name that the
+literal programming fragments expect.
+Next are the usual checks, and then a check that the
+source (right hand side) charset is not empty.
 
 @<API functions@>=
 int
-charset_merge(charset_t *set /*dest*/, charset_t *src)
+charset_merge(charset_t *dest, charset_t *src)
 {
+	charset_t *set = dest;
 	@<check for NULL pointer@>
 	if (src == NULL)
 		return CSET_EBADPTR;
 	@<check if finalized@>
 
 	if (src->nelems == 0 && src->nchars_inuse == 0)
-		return CSET_SUCCESS;
+		return CSET_SUCCESS;	// nothing to do
 
-	int new_char_count = set->nchars_inuse + src->nchars_inuse + 1;
-	int new_item_count = set->nelems + src->nelems;
+	@<merge characters@>
+	@<merge @code{set_item}s@>
 
-	int32_t *new_chars = (int32_t *) malloc(new_char_count * sizeof(int32_t));
+	return CSET_SUCCESS;
+}
+@
+
+The first task is to merge the sets of characters. Any duplicates
+are taken care of later when the target set is finalized.
+
+@<merge characters@>=
+int new_char_count = set->nchars_inuse + src->nchars_inuse + 1;
+
+int32_t *new_chars = NULL;
+if (new_char_count > 0) {
+	new_chars = (int32_t *) malloc(new_char_count * sizeof(int32_t));
 	if (new_chars == NULL)
 		return CSET_ESPACE;
 
-	set_item *new_items = (set_item *) malloc(new_item_count * sizeof(set_item));
-	if (new_items == NULL) {
-		free((void *) new_chars);
-		return CSET_ESPACE;
-	}
-
 	// allocated the space ok, now copy all the stuff in
-	memcpy(new_chars, set->chars, set->nchars_inuse * sizeof(int32_t));
+	if (set->nchars_inuse > 0)
+		memcpy(new_chars, set->chars, set->nchars_inuse * sizeof(int32_t));
+
 	memcpy(new_chars + set->nchars_inuse, src->chars, src->nchars_inuse * sizeof(int32_t));
 	new_chars[new_char_count-1] = L'\0';
-
-	memcpy(new_items, set->items, set->nelems * sizeof(set_item));
-	memcpy(new_items + set->nelems, src->items, src->nelems * sizeof(set_item));
 
 	// now update dest
 	if (set->chars != NULL)
@@ -4551,15 +4576,35 @@ charset_merge(charset_t *set /*dest*/, charset_t *src)
 	set->chars = new_chars;
 	set->nchars_inuse = new_char_count - 1;
 	set->nchars_allocated = new_char_count;
+}
+@
 
+Similar code merges in the @code{set_item}s.
+Here too, it's OK to have duplicates at this stage.
+
+@<merge @code{set_item}s@>=
+int new_item_count = set->nelems + src->nelems;
+// could only be copying characters when merging,
+// so make sure there are items to copy.
+if (new_item_count > 0) {
+	set_item *new_items = (set_item *) malloc(new_item_count * sizeof(set_item));
+	if (new_items == NULL)
+		return CSET_ESPACE;
+
+	// allocated the space ok, now copy all the stuff in
+	if (set->nelems > 0)
+		memcpy(new_items, set->items, set->nelems * sizeof(set_item));
+
+	memcpy(new_items + set->nelems, src->items, src->nelems * sizeof(set_item));
+
+	// now update dest
 	if (set->items != NULL)
 		free((void *) set->items);
 	set->items = new_items;
 	set->nelems = set->allocated = new_item_count;
-
-	return CSET_SUCCESS;
 }
 @
+
 
 @<API declarations@>=
 int charset_merge(charset_t *dest, charset_t *src);
@@ -4735,7 +4780,39 @@ We need the header file for assertions:
 @node Firstbytes
 @section Getting The Prefix Bytes
 
-Blah blah ...
+As a noticeable performance enhancement, MinRX needs to know
+the set of prefix (first) bytes in wide characters that
+@emph{cannot} appear at a particular point.  This allows it
+to process the text being scanned much faster, since it
+isn't necessary to convert the text into wide characters one at a time.
+
+MinRX knows how to process sets of ranges and extract the prefix bytes.
+However, in keeping with object-oriented design, and the fact that we
+want to keep the data structure opaque, we provide a function to let
+the object (i.e., the charset) return the prefix bytes.
+
+The data structure looks like this:
+
+@<API declarations@>=
+#define MAX_FIRSTBYTES	256
+typedef struct {
+	bool bytes[MAX_FIRSTBYTES];
+} charset_firstbytes_t;
+
+charset_firstbytes_t charset_firstbytes(charset_t *set, int *errcode);
+@
+
+@noindent
+That is, for each byte value from 0--255, the @code{bool} element at that index
+will be @code{true} if that byte is a prefix byte for any character in the charset.
+
+For eight-bit character sets, the prefix byte for each character is
+the character itself.  For Unicode values, a separate function returns
+the first character of the multibyte UTF-8 representation.
+This code was borrowed from MinRX and adapted for use with charsets.
+
+In the case of a multibyte character set that isn't Unicode, all the
+entries will be false, causing MinRX to always convert to wide characters.
 
 @<API functions@>=
 /* charset_firstbytes --- return the set of prefix bytes for the range */
@@ -4774,7 +4851,7 @@ charset_firstbytes(charset_t *set, int *errcode)
 			for (int b = low; b <= high; b++)
 				result.bytes[b] = true;
 		}
-	} else {
+	} else if (set->is_utf8) {
 		for (int i = 0; i < set->nelems; i++) {
 			uint32_t low = utfprefix(set->items[i].start);
 			uint32_t high = utfprefix(set->items[i].end);
@@ -4792,6 +4869,8 @@ done:
 @
 
 @<helper functions@>=
+/* utfprefix --- return the correct UTF-8 first byte for the wide character */
+
 static unsigned int
 utfprefix(int32_t wc)
 {
@@ -4805,15 +4884,6 @@ utfprefix(int32_t wc)
 		return 0xF0 + (wc >> 18);
 	return 0xF4;
 }
-@
-
-@<API declarations@>=
-#define MAX_FIRSTBYTES	256
-typedef struct {
-	bool bytes[MAX_FIRSTBYTES];
-} charset_firstbytes_t;
-
-charset_firstbytes_t charset_firstbytes(charset_t *set, int *errcode);
 @
 
 @node Printing
