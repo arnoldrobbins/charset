@@ -1,3 +1,8 @@
+2025-02-17         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Lots of code and prose cleanups.
+	* wordlist: Updated.
+
 2025-02-06         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr (charset_merge): Improve the logic to handle

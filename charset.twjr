@@ -361,7 +361,8 @@ Here are the functions for the API.
 @node Error Codes
 @section Error Codes
 
-Almost all of the functions return a success or error value via a
+Almost all of the functions return a success or error code
+as their return value. A few return their result via a
 pointer to a plain integer. Here are the error codes:
 
 @<error codes@>=
@@ -602,16 +603,15 @@ charset_invert(charset_t *set, int *errcode)
 	}
 
 	if (! set->finalized) {
-		charset_finalize(set);
-
-		if (! set->finalized) {
-			*errcode = CSET_ESPACE;	// make a guess
+		ret = charset_finalize(set);
+		if (ret != CSET_SUCCESS) {
+			*errcode = ret;
 			return NULL;
 		}
 	}
 
 	charset_t *newset = charset_create(errcode, set->mb_cur_max, set->is_utf8);
-	if (newset == NULL)
+	if (newset == NULL)	// *errcode is already set
 		return NULL;
 
 	newset->no_newlines = set->no_newlines;
@@ -662,9 +662,8 @@ charset_t *charset_invert(charset_t *set, int *errcode);
 There are two cases where we may want a newline to not be allowed to match.
 The first is in an inverted character set.
 The second is if we choose to not let dot match newline.
-The first case is handled when we check a character for membership
-in the set. The second is handled by explicitly setting the @code{no_newlines}
-flag.
+Both of these are the choice of the calling regex engine; to
+enable this case to be true, we set @code{no_newlines} flag.
 
 @<API functions@>=
 /* charset_set_no_newline --- set the value of the "no newlines" flag */
@@ -4161,7 +4160,7 @@ static const set_item alpha[] = {
 @
 
 @node Accessing Range Data
-@subsection Making Range Data Accessable
+@subsection Making Range Data Accessible
 
 We will need an easy way to access the range data
 for Unicode, test an eight-bit value, and find out if
@@ -4210,6 +4209,8 @@ charset_add_cclass(charset_t *set, const char *cclass)
 {
 	@<check for NULL pointer@>
 	@<check if finalized@>
+	if (cclass == NULL)
+		return CSET_EBADPTR;
 
 	int index = find_class(cclass);
 
@@ -4319,7 +4320,9 @@ find_class(const char *cclass)
 @node Wide Char Loop
 @subsection Looping Over All Possible Values
 
-If we get here, we're in a wide character locale that isn't Unicode.
+If we get here, we're in a wide character locale that isn't Unicode,
+@emph{or} we have a non-standard character class, even in a Unicode
+locale.
 So we have to ask the C library to tell us which values match
 the particular character class.
 
@@ -4400,13 +4403,14 @@ done:
 pcache = (struct _class_cache *) malloc(sizeof(struct _class_cache));
 if (pcache == NULL) {
 	*errcode = CSET_ESPACE;
+	free((void *) buf);
 	return NULL;
 }
 pcache->name = buf;
 pcache->next = NULL;
 charset_t *newset = charset_create(errcode, set->mb_cur_max, set->is_utf8);
 if (newset == NULL) {
-	*errcode = CSET_ESPACE;
+	// *errcode already set
 	free((void *) pcache->name);
 	return NULL;
 }
@@ -4425,7 +4429,10 @@ The set is then finalized to compact it, and it's merged into the original set.
 Since looping over more than 1,100,000 characters is expensive, the new set
 is cached; that's handled above by @code{find_class_in_cache()}.
 
-@strong{FIXME}: Discuss use of mutex.
+In order to avoid multiple threads attempting to add the same (locale, class)
+combination to the cache, we wrap the entire function in a mutex.
+To do this, the function must be coded in single-entrance/single-exit style
+(i.e., with @code{goto}s).
 
 @<helper functions@>=
 /* wide_char_range_loop --- loop over all possible characters to match a ctype, and cache it */
@@ -4433,26 +4440,37 @@ is cached; that's handled above by @code{find_class_in_cache()}.
 static int
 wide_char_range_loop(charset_t *set, const char *cclass, wctype_t ctype)
 {
-	// FIXME: Need to wrap this function in a mutex
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+	pthread_mutex_lock(& mutex);
+
 	int errcode = 0;
 	bool is_new = false;
-	charset_t *newset = find_class_in_cache(set, cclass, & errcode, & is_new);
+	int ret = CSET_SUCCESS;
+	charset_t *class_set = find_class_in_cache(set, cclass, & errcode, & is_new);
 
-	if (newset == NULL)
-		return errcode;
-
-	if (is_new) {
-		for (int32_t c = 0; c < MAX_CODE_POINT; c++) {
-			if (iswctype(c, ctype)) {
-				int ret;
-				if ((ret = charset_add_char(newset, c)) != CSET_SUCCESS)
-					return ret;
-			}
-		}
-		charset_finalize(newset);
+	if (class_set == NULL) {
+		ret = errcode;
+		goto done;
 	}
 
-	return charset_merge(set, newset);
+	if (is_new) {
+		for (int32_t c = 0; c <= MAX_CODE_POINT; c++) {
+			if (iswctype(c, ctype)) {
+				if ((ret = charset_add_char(class_set, c)) != CSET_SUCCESS)
+					goto done;
+			}
+		}
+		ret = charset_finalize(class_set);
+		if (ret != CSET_SUCCESS)
+			goto done;
+	}
+
+	ret = charset_merge(set, class_set);
+
+done:
+	pthread_mutex_unlock(& mutex);
+	return ret;
 }
 @
 
@@ -4470,7 +4488,6 @@ charset_copy(charset_t *set, int *errcode)
 {
 	if (errcode == NULL)
 		return NULL;
-
 	if (set == NULL) {
 		*errcode = CSET_EBADPTR;
 		return NULL;
@@ -4626,17 +4643,18 @@ in the @code{charset_t}.
 bool
 charset_in_set(const charset_t *set, int32_t the_char)
 {
+	int ret;
+
 	if (set == NULL || the_char < 0)
 		return false;
 
 	if (! set->finalized) {
-		charset_finalize((charset_t *) set);
-
-		if (! set->finalized)	// finalize() failed
+		ret = charset_finalize((charset_t *) set);
+		if (ret != CSET_SUCCESS)
 			return false;
 	}
 
-	if (the_char == L'\n' && set->no_newlines)	// FIXME: is this still right?
+	if (the_char == L'\n' && set->no_newlines)
 		return false;
 
 	bool found = is_found(set, the_char);
@@ -4741,8 +4759,8 @@ if (set->nelems == 1)
     return (set->items[0].start <= the_char && the_char <= set->items[0].end);
 @
 
-We need two comparison functions: one for use by @code{bsearch()} and
-a different one for use by by @code{qsort()} (which we'll see later).
+We need an item comparison function for use by @code{bsearch()}.
+In @ref{Finalizing}, we show the item comparison function for sorting.
 The comparisons are fundamentally different. When sorting,
 we're comparing array elements against each other. When
 searching, we compare elements one at a time against a key.
@@ -4820,7 +4838,9 @@ entries will be false, causing MinRX to always convert to wide characters.
 charset_firstbytes_t
 charset_firstbytes(charset_t *set, int *errcode)
 {
+	int ret;
 	charset_firstbytes_t result;
+
 	memset(& result, 0, sizeof(result));
 
 	if (errcode == NULL)
@@ -4832,10 +4852,10 @@ charset_firstbytes(charset_t *set, int *errcode)
 	}
 
 	if (! set->finalized) {
-		charset_finalize(set);
+		ret = charset_finalize(set);
 
-		if (! set->finalized) {
-			*errcode = CSET_ESPACE;	// guess...
+		if (ret != CSET_SUCCESS) {
+			*errcode = ret;
 			goto done;
 		}
 	}
@@ -4891,8 +4911,8 @@ utfprefix(int32_t wc)
 
 Printing the data is straightforward.
 Initially, this routine was for debugging.
-It turns out that it will be helpful to build up a
-charset and then dump it out ranges for use in other
+It turns out that it is helpful to build up a
+charset and then dump out the ranges for use in other
 C code.
 @xref{Generating Ranges}, for the rationale for
 this feature.
@@ -4958,23 +4978,25 @@ Now it's time to do the hard part, which is to produce the
 final data structure.
 
 @<API declarations@>=
-void charset_finalize(charset_t *set);
+int charset_finalize(charset_t *set);
 @
 
 @<helper functions@>=
 /* charset_finalize --- condense all the info into the final data structure */
 
-void
+int
 charset_finalize(charset_t *set)
 {
 	assert(set != NULL);
-	int result = 0;
+	int result = CSET_SUCCESS;
 
 	@<sort wide character list@>
 	@<condense wide character list into @code{set_item}s@>
 	@<condense final array of @code{set_item}s@>
 	@<find index of last 8 bit value range@>
 	set->finalized = true;
+
+	return result;
 }
 @
 
@@ -5044,7 +5066,7 @@ for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
 		// push a and start next range at c
 		result = charset_add_range(set, set->chars[range_start], set->chars[i]);
 		if (result != CSET_SUCCESS)
-			return;
+			return result;
 		total++;
 		range_start = j;
 	}
@@ -5054,7 +5076,7 @@ if (set->nchars_inuse > 0 && range_start <= set->nchars_inuse - 1) {
 	result = charset_add_range(set, set->chars[range_start],
 				set->chars[set->nchars_inuse-1]);
 	if (result != CSET_SUCCESS)
-		return;
+		return result;
 	total++;
 }
 set->nchars_inuse = total;
@@ -5289,6 +5311,7 @@ We include the standard header files that we'll need:
 #include <wctype.h>
 #include <wchar.h>
 #include <locale.h>
+#include <pthread.h>
 @
 
 @node test driver
@@ -6145,7 +6168,7 @@ process(const char *localename)
 	@<initialize types array@>
 
 	// loop over all the characters once
-	for (c = 0; c < max_unicode; c++) {
+	for (c = 0; c <= max_unicode; c++) {
 		// check the character if it matches any of the ctypes
 		for (i = 0; types[i].name != NULL; i++) {
 			if (iswctype(c, types[i].type))
