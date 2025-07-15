@@ -1,3 +1,7 @@
+2025-07-15         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* Makefile (clean): Remove genranges executable also.
+
 2025-02-17         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* LICENSE: New file.

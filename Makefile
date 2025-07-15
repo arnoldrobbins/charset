@@ -42,7 +42,7 @@ $(SOURCE): $(TWJRSOURCE)
 	./jrtangle $(TWJRSOURCE)
 
 clean:
-	rm -f *.[cho] charset.?? charset.??? charset.texi btest runtests.sh
+	rm -f *.[cho] charset.?? charset.??? charset.texi btest runtests.sh genranges
 
 spell:
 	spell $(TWJRSOURCE) | LC_ALL=C sort -u | LC_ALL=C comm -23 - wordlist
