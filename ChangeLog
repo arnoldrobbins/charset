@@ -1,3 +1,9 @@
+2025-07-16         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Use 256 instead of 128 in cases where
+	set->mb_cur_max is one, so that EBCDIC will work too. Duh.
+	And some typo fixes.
+
 2025-07-15         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* Makefile (clean): Remove genranges executable also.

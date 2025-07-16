@@ -740,7 +740,7 @@ int charset_add_equiv(charset_t *set, int32_t equiv);
 @
 
 @node Collating Sequences
-@subsection  Collating Sequences
+@subsection Collating Sequences
 
 A collating sequence is a group of characters that should be
 treated as if it were a single character. It might be written
@@ -769,7 +769,7 @@ int charset_add_collate(charset_t *set, const int32_t *collate);
 @
 
 @node Character Classes
-@section  Character Classes
+@section Character Classes
 
 Character classes provide a locale-independent way of matching
 groups of characters, such as ``alphabetic'' or ``punctuation.''
@@ -4422,7 +4422,7 @@ supported, non-standard class (such as maybe @code{[:word:]}), or we're in a
 wide character set that isn't Unicode based, even for a standard character class.
 In either case, the @code{iswctype()} function has to work.
 
-The strategy is to loop over all the characters from to @code{MAX_CODE_POINT},
+The strategy is to loop over all the characters from zero to @code{MAX_CODE_POINT},
 testing if each value is matches @code{ctype}. If so, it's added to the set.
 The set is then finalized to compact it, and it's merged into the original set.
 
@@ -4726,9 +4726,10 @@ Searching for a matching @code{set_item} is
 done using binary search.
 We provide (what we hope is) an optimization.
 On the assumption that most text is ASCII,
-when the character itself is less than 128,
+when the character itself is less than 256,
 we only binary search the set of ranges that covers
-zero through 128.  For the large sets of ranges,
+zero through 256. (256 is so that EBCDIC will also work.)
+For the large sets of ranges,
 such as @samp{alpha}, @samp{punct} and so on, this
 should make a significant difference.
 (For EBCDIC, @code{set->mb_cur_max} will be one,
@@ -4742,7 +4743,7 @@ set_item key;
 key.start = key.end = the_char;
 
 size_t nelems = set->nelems;
-if (the_char < 128 && set->nelems8bit < set->nelems)
+if (the_char < 256 && set->nelems8bit < set->nelems)
 	nelems = set->nelems8bit;
 
 found = bsearch(& key, set->items, nelems,
@@ -5213,12 +5214,12 @@ j = i + 1;
 @
 
 Finally, we want to see if there is a point where the ranges
-are outside of ASCII:
+are outside of ASCII or EBCDIC:
 
 @<find index of last 8 bit value range@>=
 set->nelems8bit = set->nelems;
 for (int i = 0; i < set->nelems; i++) {
-	if (set->items[i].start >= 128 && i > 0) {
+	if (set->items[i].start >= 256 && i > 0) {
 		set->nelems8bit = i;	// this is a count, not an index
 		break;
 	}
