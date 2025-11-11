@@ -18,8 +18,8 @@
 @c This sets the edition of the document.
 
 @c These apply across the board.
-@set UPDATE-MONTH February, 2025
-@set EDITION 0.4
+@set UPDATE-MONTH November, 2025
+@set EDITION 0.5
 
 @set TITLE Efficient Searching of Large Character Sets --- Take Two And A Half
 @set SHORTTITLE Searching Character Sets
@@ -391,7 +391,7 @@ allocates the memory and forces it to zero.
 @<API functions@>=
 /* charset_create --- make a new charset_t and initialize it */
 
-charset_t *
+Static charset_t *
 charset_create(int *errcode, int mb_cur_max, bool is_utf8)
 {
 	if (errcode == NULL)
@@ -413,8 +413,10 @@ charset_create(int *errcode, int mb_cur_max, bool is_utf8)
 @
 
 @<API declarations@>=
-charset_t *charset_create(int *errcode, int mb_cur_max, bool is_utf8);
+Static charset_t *charset_create(int *errcode, int mb_cur_max, bool is_utf8);
 @
+
+The @code{Static} ``keyword'' is handled in @ref{Source Files}.
 
 @node Adding A Character
 @section Adding A Character
@@ -436,7 +438,7 @@ when everything is good.
 @<API functions@>=
 /* charset_add_char --- add a single wide character to the set */
 
-int
+Static int
 charset_add_char(charset_t *set, int32_t wc)
 {
 	@<check for NULL pointer@>
@@ -507,7 +509,7 @@ if (set->chars == NULL) {
 @
 
 @<API declarations@>=
-int charset_add_char(charset_t *set, int32_t wc);
+Static int charset_add_char(charset_t *set, int32_t wc);
 @
 
 @node Adding Ranges
@@ -527,7 +529,7 @@ the end there is only one @code{set_item}, for @code{a-e}.
 @<API functions@>=
 /* charset_add_range --- add a range item */
 
-int
+Static int
 charset_add_range(charset_t *set, int32_t first, int32_t last)
 {
 	@<check for NULL pointer@>
@@ -572,7 +574,7 @@ if (set->items == NULL) {
 
 
 @<API declarations@>=
-int charset_add_range(charset_t *set, int32_t first, int32_t last);
+Static int charset_add_range(charset_t *set, int32_t first, int32_t last);
 @
 
 @node Inverting
@@ -589,7 +591,7 @@ inverted ranges.
 @<API functions@>=
 /* charset_invert --- invert the ranges in set and return a new set */
 
-charset_t *
+Static charset_t *
 charset_invert(charset_t *set, int *errcode)
 {
 	int ret = CSET_SUCCESS;
@@ -649,7 +651,7 @@ fail:
 @
 
 @<API declarations@>=
-charset_t *charset_invert(charset_t *set, int *errcode);
+Static charset_t *charset_invert(charset_t *set, int *errcode);
 @
 
 @<macros@>=
@@ -668,7 +670,8 @@ enable this case to be true, we set @code{no_newlines} flag.
 @<API functions@>=
 /* charset_set_no_newline --- set the value of the "no newlines" flag */
 
-int charset_set_no_newlines(charset_t *set, bool no_newlines)
+Static int
+charset_set_no_newlines(charset_t *set, bool no_newlines)
 {
 	@<check for NULL pointer@>
 	@<check if finalized@>
@@ -679,7 +682,7 @@ int charset_set_no_newlines(charset_t *set, bool no_newlines)
 @
 
 @<API declarations@>=
-int charset_set_no_newlines(charset_t *set, bool no_newlines);
+Static int charset_set_no_newlines(charset_t *set, bool no_newlines);
 @
 
 @node Some Of The Funky Stuff
@@ -705,7 +708,7 @@ the equivalent characters:
 @<API functions@>=
 /* charset_add_equiv --- add an equivalence class */
 
-int
+Static int
 charset_add_equiv(charset_t *set, int32_t equiv)
 {
 	@<check for NULL pointer@>
@@ -736,7 +739,7 @@ charset_add_equiv(charset_t *set, int32_t equiv)
 @
 
 @<API declarations@>=
-int charset_add_equiv(charset_t *set, int32_t equiv);
+Static int charset_add_equiv(charset_t *set, int32_t equiv);
 @
 
 @node Collating Sequences
@@ -749,7 +752,7 @@ like @code{[[.oa.]]}.  We support collating sequences of length one.
 @<API functions@>=
 /* charset_add_collate --- add a collating sequence */
 
-int
+Static int
 charset_add_collate(charset_t *set, const int32_t *collate)
 {
 	@<check for NULL pointer@>
@@ -765,7 +768,7 @@ charset_add_collate(charset_t *set, const int32_t *collate)
 @
 
 @<API declarations@>=
-int charset_add_collate(charset_t *set, const int32_t *collate);
+Static int charset_add_collate(charset_t *set, const int32_t *collate);
 @
 
 @node Character Classes
@@ -4156,7 +4159,7 @@ static const set_item alpha[] = {
 	{ 196608, 201546 },
 @end iftangle
 	{ -1, -1 },	// end markers
-	};
+};
 @
 
 @node Accessing Range Data
@@ -4204,7 +4207,7 @@ We expect the regexp parser to pull the name out of the expression
 @<API functions@>=
 /* charset_add_cclass --- add a character class, like "alnum" */
 
-int
+Static int
 charset_add_cclass(charset_t *set, const char *cclass)
 {
 	@<check for NULL pointer@>
@@ -4292,7 +4295,7 @@ As with the regular character and the ranges, duplicates are
 possible; that's cleaned up upon finalization.
 
 @<API declarations@>=
-int charset_add_cclass(charset_t *set, const char *cclass);
+Static int charset_add_cclass(charset_t *set, const char *cclass);
 @
 
 @node Finding A Class
@@ -4483,7 +4486,7 @@ and copying all the bits over appropriately.
 @<API functions@>=
 /* charset_copy --- create a new charset that is copy of the original */
 
-charset_t *
+Static charset_t *
 charset_copy(charset_t *set, int *errcode)
 {
 	if (errcode == NULL)
@@ -4525,7 +4528,7 @@ charset_copy(charset_t *set, int *errcode)
 @
 
 @<API declarations@>=
-charset_t *charset_copy(charset_t *set, int *errcode);
+Static charset_t *charset_copy(charset_t *set, int *errcode);
 @
 
 @node Merging charsets
@@ -4549,7 +4552,7 @@ Next are the usual checks, and then a check that the
 source (right hand side) charset is not empty.
 
 @<API functions@>=
-int
+Static int
 charset_merge(charset_t *dest, charset_t *src)
 {
 	charset_t *set = dest;
@@ -4624,7 +4627,7 @@ if (new_item_count > 0) {
 
 
 @<API declarations@>=
-int charset_merge(charset_t *dest, charset_t *src);
+Static int charset_merge(charset_t *dest, charset_t *src);
 @
 
 @node Using the charset_t
@@ -4640,7 +4643,7 @@ in the @code{charset_t}.
 @<API functions@>=
 /* charset_in_set --- see if a character is in the set */
 
-bool
+Static bool
 charset_in_set(const charset_t *set, int32_t the_char)
 {
 	int ret;
@@ -4669,7 +4672,7 @@ release all the storage it uses.
 @<API functions@>=
 /* charset_free --- free all storage */
 
-int
+Static int
 charset_free(const charset_t *set)
 {
 	@<check for NULL pointer@>
@@ -4688,8 +4691,8 @@ charset_free(const charset_t *set)
 @
 
 @<API declarations@>=
-bool charset_in_set(const charset_t *set, int32_t the_char);
-int charset_free(const charset_t *set);
+Static bool charset_in_set(const charset_t *set, int32_t the_char);
+Static int charset_free(const charset_t *set);
 @
 
 @node Searching
@@ -4818,7 +4821,7 @@ typedef struct {
 	bool bytes[MAX_FIRSTBYTES];
 } charset_firstbytes_t;
 
-charset_firstbytes_t charset_firstbytes(charset_t *set, int *errcode);
+Static charset_firstbytes_t charset_firstbytes(charset_t *set, int *errcode);
 @
 
 @noindent
@@ -4836,7 +4839,7 @@ entries will be false, causing MinRX to always convert to wide characters.
 @<API functions@>=
 /* charset_firstbytes --- return the set of prefix bytes for the range */
 
-charset_firstbytes_t
+Static charset_firstbytes_t
 charset_firstbytes(charset_t *set, int *errcode)
 {
 	int ret;
@@ -4921,7 +4924,7 @@ this feature.
 @<API functions@>=
 /* charset_dump --- dump out the data structures */
 
-void
+Static void
 charset_dump(const charset_t *set, FILE *fp, bool use_c_format)
 {
 	static const char *boolval[] = {
@@ -4969,7 +4972,7 @@ for (int i = 0; i < set->nelems; i++) {
 @
 
 @<API declarations@>=
-void charset_dump(const charset_t *set, FILE *fp, bool use_c_format);
+Static void charset_dump(const charset_t *set, FILE *fp, bool use_c_format);
 @
 
 @node Finalizing
@@ -4979,13 +4982,13 @@ Now it's time to do the hard part, which is to produce the
 final data structure.
 
 @<API declarations@>=
-int charset_finalize(charset_t *set);
+Static int charset_finalize(charset_t *set);
 @
 
 @<helper functions@>=
 /* charset_finalize --- condense all the info into the final data structure */
 
-int
+Static int
 charset_finalize(charset_t *set)
 {
 	assert(set != NULL);
@@ -5239,6 +5242,8 @@ for (int i = 0; i < set->nelems; i++) {
 #include <stdbool.h>
 #include <stdint.h>
 
+@<Handle compilation inside MinRX@>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -5313,6 +5318,18 @@ We include the standard header files that we'll need:
 #include <wchar.h>
 #include <locale.h>
 #include <pthread.h>
+@
+
+Eventually, MinRX will @samp{#include} @file{charset.c} which includes @file{charset.h}.
+Mike wants @file{minrx.o} to have only a few symbols defined in it; all of the charset
+routines should not be externally visible (avoiding namespace pollution, so to speak).
+
+@<Handle compilation inside MinRX@>=
+#ifdef MINRX_H
+#define Static static
+#else
+#define Static	/* nothing */
+#endif
 @
 
 @node test driver
