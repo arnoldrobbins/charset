@@ -628,7 +628,7 @@ charset_invert(charset_t *set, int *errcode)
 
 	int low = 0;
 
-	for (int i = 0; i < set->nelems; i++) {
+	for (size_t i = 0; i < set->nelems; i++) {
 		if (low < set->items[i].start) {
 			if ((ret = charset_add_range(newset, low, set->items[i].start - 1)) != CSET_SUCCESS)
 				goto fail;
@@ -4866,21 +4866,21 @@ charset_firstbytes(charset_t *set, int *errcode)
 #define min(x, y) ((x) < (y) ? (x) : (y))
 
 	if (set->mb_cur_max == 1) {
-		for (int i = 0; i < set->nelems; i++) {
+		for (size_t i = 0; i < set->nelems; i++) {
 			if (set->items[i].start > 255)
 				break;
 			uint32_t low = set->items[i].start;
 			uint32_t high = min(set->items[i].end, 255);
 
-			for (int b = low; b <= high; b++)
+			for (uint32_t b = low; b <= high; b++)
 				result.bytes[b] = true;
 		}
 	} else if (set->is_utf8) {
-		for (int i = 0; i < set->nelems; i++) {
+		for (size_t i = 0; i < set->nelems; i++) {
 			uint32_t low = utfprefix(set->items[i].start);
 			uint32_t high = utfprefix(set->items[i].end);
 
-			for (int b = low; b <= high; b++)
+			for (uint32_t b = low; b <= high; b++)
 				result.bytes[b] = true;
 		}
 	}
@@ -4957,8 +4957,8 @@ fprintf(fp, "nchars_inuse = %zd\n", set->nchars_inuse);
 fprintf(fp, "nelems = %zd\n", set->nelems);
 fprintf(fp, "nelems8bit = %zd\n", set->nelems8bit);
 
-for (int i = 0; i < set->nelems; i++) {
-	fprintf(fp, "%3d. RANGE: start = L'%lc' (%d), end = L'%lc' (%d)\n",
+for (size_t i = 0; i < set->nelems; i++) {
+	fprintf(fp, "%3zd. RANGE: start = L'%lc' (%d), end = L'%lc' (%d)\n",
 		i, items[i].start, items[i].start, items[i].end, items[i].end);
 }
 @
@@ -4966,7 +4966,7 @@ for (int i = 0; i < set->nelems; i++) {
 Dumping the ranges in C format is simpler:
 
 @<dump ranges in C format@>=
-for (int i = 0; i < set->nelems; i++) {
+for (size_t i = 0; i < set->nelems; i++) {
 	fprintf(fp, "\t{ %d, %d },\n", items[i].start, items[i].end);
 }
 @
@@ -5042,7 +5042,7 @@ expressions, there shouldn't be any problem.
 size_t i, j;
 for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
 	if (set->chars[i] == set->chars[j]) {
-		for (int k = j + 1; k < set->nchars_inuse; j++, k++) {
+		for (size_t k = j + 1; k < set->nchars_inuse; j++, k++) {
 			set->chars[j] = set->chars[k];
 		}
 		set->chars[j] = L'\0';
@@ -5208,7 +5208,7 @@ if (need_shift) {
 @
 
 @<shift @code{items} down by one@>=
-for (int k = j + 1; k < set->nelems; j++, k++)
+for (size_t k = j + 1; k < set->nelems; j++, k++)
 	items[j] = items[k];
 
 set->nelems--;
@@ -5221,7 +5221,7 @@ are outside of ASCII or EBCDIC:
 
 @<find index of last 8 bit value range@>=
 set->nelems8bit = set->nelems;
-for (int i = 0; i < set->nelems; i++) {
+for (size_t i = 0; i < set->nelems; i++) {
 	if (set->items[i].start >= 256 && i > 0) {
 		set->nelems8bit = i;	// this is a count, not an index
 		break;

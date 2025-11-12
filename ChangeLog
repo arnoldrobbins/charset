@@ -1,3 +1,12 @@
+2025-11-11         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* tests.good: Brought into sync with code changes from 2025-07-16.
+	* Makefile (CFLAGS): Add -Wextra.
+	(check): Use diff -ua instead of diff -u.
+	* charset.twjr: Use size_t and uint32_t types in loops to avoid
+	warnings about signed vs. unsigned integer comparisons.
+	This keeps Mike happy.
+
 2025-11-10         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Add a Static keyword to function declarations and

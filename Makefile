@@ -1,6 +1,6 @@
 # Makefile for charset doc and code
 
-CFLAGS = -g
+CFLAGS = -g -Wextra
 
 TWJRSOURCE = charset.twjr
 
