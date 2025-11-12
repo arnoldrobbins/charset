@@ -51,5 +51,5 @@ check: btest
 	./runtests.sh > _tests ; \
 	if cmp -s tests.good _tests ; \
 	then	rm _tests; \
-	else	diff -u tests.good _tests | more ; \
+	else	diff -ua tests.good _tests | more ; \
 	fi
