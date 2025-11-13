@@ -4477,6 +4477,49 @@ done:
 }
 @
 
+@node Unterminated Class Name
+@subsection Getting A Class Name from An Unterminated String
+
+In some cases, it's useful if the regexp parser can pass in beginning
+and end pointers from the middle of the string it's parsing. The class
+name is expected to start at @code{bp} and go up to, but not including, @code{ep}.
+
+@<API declarations@>=
+Static int charset_add_cclass2(charset_t *set, const char *bp, const char *ep);
+@
+
+We will use a small, fixed size, stack allocated buffer. If it's
+too big, we punt. This doesn't quite keep with the GNU ``no arbitrary
+limits'' principle, but in practice, there won't be a class name
+larger than, say, 100 characters.
+
+@<API functions@>=
+/* charset_add_cclass2 --- get class name from unterminated string */
+
+Static int
+charset_add_cclass2(charset_t *set, const char *bp, const char *ep)
+{
+	if (bp == NULL || ep == NULL || bp >= ep)
+		return CSET_EBADPTR;
+
+#define ARBITRARY_LIMIT	101		// 100 + '\0'
+	char cclass[ARBITRARY_LIMIT];
+
+	if (ep - bp >= ARBITRARY_LIMIT)
+		return CSET_ECTYPE;
+
+	int i;
+	for (i = 0; bp < ep; i++, bp++)
+		cclass[i] = *bp;
+	
+	cclass[i] = '\0';
+
+	return charset_add_cclass(set, cclass);
+
+#undef ARBITRARY_LIMIT
+}
+@
+
 @node Copying A charset
 @section Copying A @code{charset_t}
 
