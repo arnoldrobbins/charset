@@ -6255,7 +6255,7 @@ charset_add_equiv(charset_t *set, int32_t equiv)
 	// and search the equivs table
 	struct equiv *eq = (struct equiv *) bsearch(& key_equiv, equiv_table,
 						sizeof(equiv_table) / sizeof(equiv_table[0]),
-						sizeof(struct equiv), cmp_refs);
+						sizeof(struct equiv), cmp_equivs);
 
 	if (eq == NULL) {	// not in the equivs table, add the character
 		if ((result = charset_add_char(set, equiv)) != CSET_SUCCESS)
