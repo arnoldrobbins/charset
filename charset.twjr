@@ -6217,7 +6217,8 @@ cmp_refs(const void *l, const void *r)
 }
 @
 
-Finally, here's the actual C code:
+Finally, here's the actual C code. It is still only
+good for Unicode, but that's likely to be good enough:
 
 @<API functions@>=
 /* charset_add_equiv --- add an equivalence class */
@@ -6230,6 +6231,13 @@ charset_add_equiv(charset_t *set, int32_t equiv)
 
 	if (equiv < 0)
 		return CSET_ERANGE;
+
+	int result;
+
+	if (set->mb_cur_max == 1 || ! set->is_utf8) {
+		result = charset_add_char(set, equiv);
+		return result;
+	}
 
 	// search the refs table first
 	struct ref key_ref = { equiv, 0 };
@@ -6248,8 +6256,6 @@ charset_add_equiv(charset_t *set, int32_t equiv)
 	struct equiv *eq = (struct equiv *) bsearch(& key_equiv, equiv_table,
 						sizeof(equiv_table) / sizeof(equiv_table[0]),
 						sizeof(struct equiv), cmp_refs);
-
-	int result;
 
 	if (eq == NULL) {	// not in the equivs table, add the character
 		if ((result = charset_add_char(set, equiv)) != CSET_SUCCESS)
