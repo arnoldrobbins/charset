@@ -1,3 +1,10 @@
+2025-11-18         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Use pregenerated tables for building
+	sets for equivalence classes.
+	* Printf.awk: New file.
+	* DerivedName.txt: New file.
+
 2025-11-11         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* tests.good: Brought into sync with code changes from 2025-07-16.
