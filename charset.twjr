@@ -698,6 +698,9 @@ Both of these are the choice of the calling regex engine; to
 enable this case to be true, we set @code{no_newlines} flag.
 
 @<API functions@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 /* charset_set_no_newline --- set the value of the "no newlines" flag */
 
 Static int
@@ -709,10 +712,19 @@ charset_set_no_newlines(charset_t *set, bool no_newlines)
 	set->no_newlines = no_newlines;
 	return CSET_SUCCESS;
 }
+@iftangle
+#endif
+@end iftangle
 @
 
 @<API declarations@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 Static int charset_set_no_newlines(charset_t *set, bool no_newlines);
+@iftangle
+#endif
+@end iftangle
 @
 
 @node Some Of The Funky Stuff
@@ -6288,6 +6300,9 @@ treated as if it were a single character. It might be written
 like @code{[[.oa.]]}.  We support collating sequences of length one.
 
 @<API functions@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 /* charset_add_collate --- add a collating sequence */
 
 Static int
@@ -6303,10 +6318,19 @@ charset_add_collate(charset_t *set, const int32_t *collate)
 
 	return charset_add_char(set, collate[0]);
 }
+@iftangle
+#endif
+@end iftangle
 @
 
 @<API declarations@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 Static int charset_add_collate(charset_t *set, const int32_t *collate);
+@iftangle
+#endif
+@end iftangle
 @
 
 @node Character Classes
@@ -10065,6 +10089,9 @@ Copying a charset is straightforward, involving memory allocation
 and copying all the bits over appropriately.
 
 @<API functions@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 /* charset_copy --- create a new charset that is copy of the original */
 
 Static charset_t *
@@ -10106,10 +10133,19 @@ charset_copy(charset_t *set, int *errcode)
 	*errcode = CSET_SUCCESS;
 	return newset;
 }
+@iftangle
+#endif
+@end iftangle
 @
 
 @<API declarations@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 Static charset_t *charset_copy(charset_t *set, int *errcode);
+@iftangle
+#endif
+@end iftangle
 @
 
 @node Merging charsets
@@ -10503,6 +10539,9 @@ C code.
 this feature.
 
 @<API functions@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 /* charset_dump --- dump out the data structures */
 
 Static void
@@ -10524,6 +10563,9 @@ charset_dump(const charset_t *set, FILE *fp, bool use_c_format)
 	}
 	fflush(fp);
 }
+@iftangle
+#endif
+@end iftangle
 @
 
 The debug format prints the structure members in a (more or less)
@@ -10553,7 +10595,13 @@ for (size_t i = 0; i < set->nelems; i++) {
 @
 
 @<API declarations@>=
+@iftangle
+#ifndef _MINRX_H
+@end iftangle
 Static void charset_dump(const charset_t *set, FILE *fp, bool use_c_format);
+@iftangle
+#endif
+@end iftangle
 @
 
 @node Finalizing
