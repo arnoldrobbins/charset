@@ -1042,7 +1042,7 @@ the characters that are there.  Two binary searches will go
 ``sleazy'' algorithm. (Yeah, I like that word. :-)
 
 @<helper functions@>=
-static struct equiv {
+static const struct equiv {
 	int32_t		the_char;
 	int			count;
 	int32_t		equivs[200];
@@ -1480,7 +1480,7 @@ static struct equiv {
 @end iftangle
 };
 
-static struct ref {
+static const struct ref {
 	int32_t		the_char;
 	int32_t		key_char;
 } ref_table[] = {
