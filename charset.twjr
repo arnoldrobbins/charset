@@ -9999,15 +9999,24 @@ combination to the cache, we wrap the entire function in a mutex.
 To do this, the function must be coded in single-entrance/single-exit style
 (i.e., with @code{goto}s).
 
+Additionally, the use of @code{pthreads} is bracketed with @code{#ifdef}; if @code{charset}
+will be used in a single-threaded program, there's no need to call the @code{pthreads}
+library or to link against it. This requires the configuration machinery for the
+program (Autoconf-based or whatever) to define @code{HAVE_PTHREADS}. (See
+@uref{https://www.gnu.org/software/autoconf-archive/ax_pthread.html, the @code{AX_PTHREAD} macro}
+for more information.)
+
 @<helper functions@>=
 /* wide_char_range_loop --- loop over all possible characters to match a ctype, and cache it */
 
 static int
 wide_char_range_loop(charset_t *set, const char *cclass, wctype_t ctype)
 {
+#ifdef HAVE_PTHREADS
 	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 	pthread_mutex_lock(& mutex);
+#endif
 
 	int errcode = 0;
 	bool is_new = false;
@@ -10034,7 +10043,9 @@ wide_char_range_loop(charset_t *set, const char *cclass, wctype_t ctype)
 	ret = charset_merge(set, class_set);
 
 done:
+#ifdef HAVE_PTHREADS
 	pthread_mutex_unlock(& mutex);
+#endif
 	return ret;
 }
 @
@@ -10946,7 +10957,9 @@ We include the standard header files that we'll need:
 #include <wctype.h>
 #include <wchar.h>
 #include <locale.h>
+#ifdef HAVE_PTHREADS
 #include <pthread.h>
+#endif
 @
 
 Eventually, MinRX will @samp{#include} @file{charset.c} which includes @file{charset.h}.
