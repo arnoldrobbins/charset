@@ -10215,7 +10215,8 @@ if (new_char_count > 0) {
 	if (set->nchars_inuse > 0)
 		memcpy(new_chars, set->chars, set->nchars_inuse * sizeof(int32_t));
 
-	memcpy(new_chars + set->nchars_inuse, src->chars, src->nchars_inuse * sizeof(int32_t));
+	if (src->chars != NULL)
+		memcpy(new_chars + set->nchars_inuse, src->chars, src->nchars_inuse * sizeof(int32_t));
 	new_chars[new_char_count-1] = L'\0';
 
 	// now update dest
@@ -10243,7 +10244,8 @@ if (new_item_count > 0) {
 	if (set->nelems > 0)
 		memcpy(new_items, set->items, set->nelems * sizeof(set_item));
 
-	memcpy(new_items + set->nelems, src->items, src->nelems * sizeof(set_item));
+	if (src->items != NULL)
+		memcpy(new_items + set->nelems, src->items, src->nelems * sizeof(set_item));
 
 	// now update dest
 	if (set->items != NULL)
@@ -10645,9 +10647,12 @@ charset_finalize(charset_t *set)
 @
 
 Once we have the list of wide characters, sorting it is easy:
+Checking that @code{set->chars} lets us avoid ``undefined behavior''
+warnings from GCC's Undefined Behavior Sanitizor (UBSAN)
 
 @<sort wide character list@>=
-qsort(set->chars, set->nchars_inuse, sizeof(int32_t), int32_t_compare);
+if (set->chars != NULL)
+	qsort(set->chars, set->nchars_inuse, sizeof(int32_t), int32_t_compare);
 @
 
 @noindent
@@ -10726,9 +10731,13 @@ if (set->nchars_inuse > 0 && range_start <= set->nchars_inuse - 1) {
 set->nchars_inuse = total;
 @
 
+Here too, we check for @code{NULL} before sorting to
+avoid undefined behavior.
+
 @<condense final array of @code{set_item}s@>=
 // sort it
-qsort(set->items, set->nelems,
+if (set->items != NULL)
+	qsort(set->items, set->nelems,
 		sizeof(set_item), item_compare_for_sorting);
 
 // condense it
