@@ -10910,6 +10910,8 @@ typedef struct _charset charset_t;
 @(charset.c@)=
 @<Copyright statement@>
 
+@<Unicode version statement@>
+
 @<includes@>
 #include "charset.h"	// for the charset_t typedef
 
@@ -10951,6 +10953,17 @@ To get it out of the way, here is the copyright statement.
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+@
+
+Also, for people who are interested, we document the version of
+Unicode supported by this code.
+
+@<Unicode version statement@>=
+// The tables in this file used for different classifications of
+// characters were created by running C code calling into GLIBC
+// version 2.39.  The Unicode support in that version of GLIBC 
+// is for the Unicode 14.0 standard.  With any luck, the tables
+// will be updated occasionally to newer standards. :-)
 @
 
 We include the standard header files that we'll need:
@@ -11667,7 +11680,7 @@ if (cur_wchar == L'.') {
 }
 @
 
-@node test driver
+@node test program driver script
 @section The Test Program Driver Script
 
 The idea is to have a text file containing tests, and a shell
