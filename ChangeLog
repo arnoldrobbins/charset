@@ -1,3 +1,12 @@
+2026-01-14         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Change %zd to %zu.
+
+2026-01-09         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Fix some indentation. Update copyright and
+	document version.
+
 2025-11-18         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Use pregenerated tables for building
