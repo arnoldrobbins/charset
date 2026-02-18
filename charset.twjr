@@ -505,6 +505,9 @@ add a character and its upper- and lower-case variants.
 @<API functions@>=
 /* charset_add_char_ic --- add a single wide character to the set, and its case alternatives */
 
+@iftangle
+@<disable @code{-Wunused-function}@>
+@end iftangle
 Static int
 charset_add_char_ic(charset_t *set, int32_t wc)
 {
@@ -535,10 +538,19 @@ charset_add_char_ic(charset_t *set, int32_t wc)
 
 	return result1;
 }
+@iftangle
+@<enable @code{-Wunused-function}@>
+@end iftangle
 @
 
 @<API declarations@>=
+@iftangle
+@<disable @code{-Wunused-function}@>
+@end iftangle
 Static int charset_add_char_ic(charset_t *set, int32_t wc);
+@iftangle
+@<enable @code{-Wunused-function}@>
+@end iftangle
 @
 
 @node Adding Ranges
@@ -699,7 +711,7 @@ enable this case to be true, we set @code{no_newlines} flag.
 
 @<API functions@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 /* charset_set_no_newline --- set the value of the "no newlines" flag */
 
@@ -713,18 +725,36 @@ charset_set_no_newlines(charset_t *set, bool no_newlines)
 	return CSET_SUCCESS;
 }
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
 @
 
 @<API declarations@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 Static int charset_set_no_newlines(charset_t *set, bool no_newlines);
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
+@
+
+Although it doesn't appear in the woven text, for the
+generated code, we disable the ``unused function'' warning
+using a GCC-specific @code{#pragma} statement.
+It's applied to several functions that MinRX doesn't use.
+It's useful to keep these functions available in case
+it's necessary to add debug prints or to call them from
+a debugger, and this way we don't have to disable
+@code{#ifdef} statements.
+
+@<disable @code{-Wunused-function}@>=
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+@
+
+@<enable @code{-Wunused-function}@>=
+#pragma GCC diagnostic pop
 @
 
 @node Some Of The Funky Stuff
@@ -6301,7 +6331,7 @@ like @code{[[.oa.]]}.  We support collating sequences of length one.
 
 @<API functions@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 /* charset_add_collate --- add a collating sequence */
 
@@ -6319,17 +6349,17 @@ charset_add_collate(charset_t *set, const int32_t *collate)
 	return charset_add_char(set, collate[0]);
 }
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
 @
 
 @<API declarations@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 Static int charset_add_collate(charset_t *set, const int32_t *collate);
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
 @
 
@@ -10101,7 +10131,7 @@ and copying all the bits over appropriately.
 
 @<API functions@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 /* charset_copy --- create a new charset that is copy of the original */
 
@@ -10145,17 +10175,17 @@ charset_copy(charset_t *set, int *errcode)
 	return newset;
 }
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
 @
 
 @<API declarations@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 Static charset_t *charset_copy(charset_t *set, int *errcode);
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
 @
 
@@ -10553,7 +10583,7 @@ this feature.
 
 @<API functions@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 /* charset_dump --- dump out the data structures */
 
@@ -10577,7 +10607,7 @@ charset_dump(const charset_t *set, FILE *fp, bool use_c_format)
 	fflush(fp);
 }
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
 @
 
@@ -10609,11 +10639,11 @@ for (size_t i = 0; i < set->nelems; i++) {
 
 @<API declarations@>=
 @iftangle
-#ifndef _MINRX_H
+@<disable @code{-Wunused-function}@>
 @end iftangle
 Static void charset_dump(const charset_t *set, FILE *fp, bool use_c_format);
 @iftangle
-#endif
+@<enable @code{-Wunused-function}@>
 @end iftangle
 @
 
@@ -10705,8 +10735,7 @@ Once we have a sorted and uniqued list of wide characters,
 generating the correct ranges is relatively easy.
 
 @<generate @code{set_item}s@>=
-size_t range_start, total;
-range_start = total = 0;
+size_t range_start = 0;
 for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
 	if (set->chars[j] == set->chars[i] + 1) {	// ab...
 		continue;
@@ -10716,7 +10745,6 @@ for (i = 0, j = 1; j < set->nchars_inuse; i++, j++) {
 		result = charset_add_range(set, set->chars[range_start], set->chars[i]);
 		if (result != CSET_SUCCESS)
 			return result;
-		total++;
 		range_start = j;
 	}
 }
@@ -10726,9 +10754,7 @@ if (set->nchars_inuse > 0 && range_start <= set->nchars_inuse - 1) {
 				set->chars[set->nchars_inuse-1]);
 	if (result != CSET_SUCCESS)
 		return result;
-	total++;
 }
-set->nchars_inuse = total;
 @
 
 Here too, we check for @code{NULL} before sorting to

@@ -1,3 +1,11 @@
+2026-02-18         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Fix bug in charset_merge that affected
+	non-UTF-8 locales where MB_CUR_MAX > 1. Thanks to Mike Haertel
+	for the report.
+	Unrelated: Use #pragma to ignore unused functions instead of
+	bracketing in #ifndef.
+
 2026-01-14         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Change %zd to %zu.
