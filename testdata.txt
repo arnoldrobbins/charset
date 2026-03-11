@@ -31,3 +31,7 @@
 -Sd	[]abc-]	]ab-
 -Fd	[^]abc-]	]ab-
 -Fd	[a[:word:]c]	a
+-Sdi	[Σ]	σ
+-Sdi	[Σ]	ς
+-Sdi	[σ]	Σ
+-Fdi	[ς]	Σ
