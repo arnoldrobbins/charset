@@ -11299,7 +11299,7 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 		return NULL;
 	}
 
-	charset_t *bracket_expr = charset_create(errcode, MB_CUR_MAX, true);
+	charset_t *bracket_expr = charset_create(errcode, false, true);
 	if (bracket_expr == NULL || *errcode != CSET_SUCCESS)
 		return NULL;
 
@@ -11918,7 +11918,7 @@ for (i = 0; types[i].name != NULL; i++) {
 	types[i].fp = fp;
 	types[i].type = wctype(types[i].name);
 	int errcode = 0;
-	types[i].cset = charset_create(& errcode, MB_CUR_MAX, true);
+	types[i].cset = charset_create(& errcode, false, true);
 }
 @
 
