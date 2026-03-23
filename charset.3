@@ -1,4 +1,4 @@
-.TH CHARSET 3 "January 26 2025" MinRX
+.TH CHARSET 3 "March 23 2025" MinRX
 .SH NAME
 charset \(em store sets of characters and test against them
 .SH SYNOPSIS
@@ -28,7 +28,7 @@ enum {
 	CSET_ERANGE,		// Corresponds to REG_ERANGE
 };
 
-charset_t *charset_create(int *errcode, int mb_cur_max, bool is_utf8);
+charset_t *charset_create(int *errcode, bool locale_is_8bit, bool is_utf8);
 
 int charset_add_range(charset_t *set, int32_t first, int32_t last);
 int charset_add_char(charset_t *set, int32_t wc);
@@ -82,13 +82,13 @@ if something should go wrong.
 .PP
 The functions are as follows:
 .TP
-\f(CWcharset_t *charset_create(int *errcode, int mb_cur_max, bool is_utf8);\fP
+\f(CWcharset_t *charset_create(int *errcode, bool locale_is_8bit, bool is_utf8);\fP
 Create a
 .I charset
 and return a pointer to it.
 Returns non-\f(CWNULL\fP upon success or \f(CWNULL\fP if something went wrong.
 In the latter case, \f(CW*errcode\fP is filled with the error.
-\f(CWmb_cur_max\fP should be the current value for \f(CWMB_CUR_MAX\fP,
+\f(CWlocale_is_8bit\fP should be true if the current locale is an eight-bit one.
 and \f(CWis_utf8\fP should be \f(CWtrue\fP if the current locale
 is a UTF-8 locale.  It's up to the caller to determine (and possibly
 cache) these values in advance.

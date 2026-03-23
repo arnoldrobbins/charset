@@ -2,6 +2,7 @@
 
 	* charset.twjr: Rename mb_cur_max member to locale_is_8bit.
 	Some small code adjustments and adjust testing code.
+	* charset.3: Updated.
 
 2026-02-18         Arnold D. Robbins     <arnold@skeeve.com>
 
