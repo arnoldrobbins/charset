@@ -9,6 +9,13 @@
 	Some small code adjustments and adjust testing code.
 	* charset.3: Updated.
 
+2026-03-11         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Fix cases where one letter can have more than
+	one alternate-case variant. Bump the version.
+	* testdata.txt: Add a test.
+	* tests.good: Updated.
+
 2026-02-18         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Fix bug in charset_merge that affected

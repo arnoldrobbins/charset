@@ -19,7 +19,7 @@
 
 @c These apply across the board.
 @set UPDATE-MONTH March, 2026
-@set EDITION 0.72
+@set EDITION 0.8
 
 @set TITLE Efficient Searching of Large Character Sets --- Take Two And A Half
 @set SHORTTITLE Searching Character Sets
@@ -502,7 +502,82 @@ Static int charset_add_char(charset_t *set, int32_t wc);
 Besides being able to add a character, we need the option to
 add a character and its upper- and lower-case variants.
 
+You might think that this is straightforward, using just
+@code{towupper()} and @code{towlower()}, but it's not. There are
+several character sets (such as Greek), where multiple lower-case
+letters map to a single upper-case letter, and vice versa.
+
+According to Mike, according to POSIX, the way to ignore case
+when matching is to see if the character being examined, or
+its upper-/lower-case variants, are the same as the character
+in the regular expression. Here is the exact text, from Section 4.1
+of the standard,
+@cite{Case Insensitive Comparisons}:
+
+@quotation
+When a standard utility or function that uses regular expressions or
+pattern matching specifies that matching shall be case insensitive,
+then if a string would match the regular expression or pattern when
+doing a case-sensitive match, the same string with any of its characters
+replaced with their case counterparts, as defined by the @code{toupper}
+and @code{tolower} character mappings (see 7.3.1 @code{LC_CTYPE}),
+shall also match when doing a case-insensitive match.
+
+This definition of case-insensitive processing is intended to allow
+matching of multi-character collating elements as well as characters,
+as each character in the string is matched using both its cases. For
+example, in a locale with a @code{"Ch"} multi-character collating element
+(see 7.3.2 @code{LC_COLLATE}), the bracket expression @code{"[[.Ch.]]"}
+(see 9.3.5 @cite{RE Bracket Expression} item 4) matches the strings
+@code{"ch"}, @code{"Ch"}, @code{"cH"}, and @code{"CH"} when matching
+without regard to case.
+@end quotation
+
+In any case, we need to take into account the possibility
+that ignoring case can involve more than just two characters.
+First, the API declaration:
+
+@<API declarations@>=
+Static int charset_add_char_ic(charset_t *set, int32_t wc);
+@
+
+Now, on to the code. First, we need functions to change the case
+of a character.  It turns out that we need one version for single-byte
+locales and another for wide characters (sigh):
+
 @<API functions@>=
+/* flip_case --- return the opposite case of the current character (bytes) */
+
+static int32_t
+flip_case(int32_t wc)
+{
+    wc &= 0xff;
+
+	if (islower(wc))
+		return toupper(wc);
+	else if (isupper(wc))
+		return tolower(wc);
+
+	return wc;
+}
+
+/* wflip_case --- return the opposite case of the current character (wide chars) */
+
+static int32_t
+wflip_case(int32_t wc)
+{
+	if (iswlower(wc))
+		return towupper(wc);
+	else if (iswupper(wc))
+		return towlower(wc);
+
+	return wc;
+}
+
+@<case-ignoring function for Unicode@>
+@<case-ignoring function for 8-bit locales@>
+@<case-ignoring function for non-Unicode@>
+
 /* charset_add_char_ic --- add a single wide character to the set, and its case alternatives */
 
 Static int
@@ -514,31 +589,197 @@ charset_add_char_ic(charset_t *set, int32_t wc)
 	if (wc < 0)
 		return CSET_ERANGE;
 
-	int result1 = charset_add_char(set, wc);
+	int result = charset_add_char(set, wc);
+	bool is_alpha = (set->locale_is_8bit ? isalpha(wc) : iswalpha(wc));
 
-	if (result1 == CSET_SUCCESS) {
-		int result2, result3;
-		result2 = result3 = CSET_SUCCESS;
+	if (result != CSET_SUCCESS || ! is_alpha)
+		return result;
 
-		int32_t wcl = set->locale_is_8bit == 1 ? tolower(wc) : (int32_t) towlower(wc);
-		int32_t wcu = set->locale_is_8bit == 1 ? toupper(wc) : (int32_t) towupper(wc);
+	// at this point, we know we have a letter
+     
+	bool added = false;
 
-		if (wc != wcl || wc != wcu) {
-			result2 = charset_add_char(set, wcl);
-			result3 = charset_add_char(set, wcu);
+	if (set->locale_is_8bit == 1)
+		result = add_case_variants_single_byte(set, wc, & added);
+	else if (set->is_utf8)
+		result = add_case_variants_utf(set, wc, & added);
+	else {
+		int32_t limit = MAX_CODE_POINT;
+		switch (MB_CUR_MAX) {
+		case 2:
+			limit = 0xffff;
+			break;
+		case 3:
+			limit = 0xffffff;
+			break;
+		default:
+			break;
 		}
-		if (result3 != CSET_SUCCESS)
-			return result3;
-		if (result2 != CSET_SUCCESS)
-			return result2;
+		result = add_case_variants_non_utf(set, wc, limit, & added);
 	}
 
-	return result1;
+	if (result != CSET_SUCCESS)
+		return result;
+
+	if (! added) {
+		int32_t flipped_wc, flipped_back;
+
+		if (set->locale_is_8bit) {
+			flipped_wc = flip_case(wc);
+			flipped_back = flip_case(flipped_wc);
+		} else {
+			flipped_wc = wflip_case(wc);
+			flipped_back = wflip_case(flipped_wc);
+		}
+
+		if (flipped_back == wc)
+			result = charset_add_char(set, flipped_wc);
+		// fall through to return result
+	}
+
+	return result;
 }
 @
 
-@<API declarations@>=
-Static int charset_add_char_ic(charset_t *set, int32_t wc);
+For Unicode, we can (and did) pre-compute the information related to
+which characters have more than one opposite-case variant.  We can use
+this table to make it easy to add the additional variants.
+
+The table is sorted, but since it only has 31 elements, we don't currently
+take advantage of that to do a binary search. Instead, we do a simple
+linear search.  If that is shown to be a problem, it can be replaced
+later with a binary search.
+
+@<case-ignoring function for Unicode@>=
+/* add_case_variants_utf --- add the case variants in a UTF-8 locale */
+
+static int
+add_case_variants_utf(charset_t *set, int32_t wc, bool *added)
+{
+	struct casemap {
+		int32_t	the_char;
+		int	count;
+		int32_t	alts[3];
+	} case_chars[] = {
+		{ 0x49, 2, { 0x69, 0x131, } }, // "I": "i" "ı"
+		{ 0x53, 2, { 0x73, 0x17f, } }, // "S": "s" "ſ"
+@ifweave
+		...
+@end ifweave
+@iftangle
+		{ 0x69, 2, { 0x49, 0x130, } }, // "i": "I" "İ"
+		{ 0x6b, 2, { 0x4b, 0x212a, } }, // "k": "K" "K"
+		{ 0xdf, 2, { 0xdf, 0x1e9e, } }, // "ß": "ß" "ẞ"
+		{ 0xe5, 2, { 0xc5, 0x212b, } }, // "å": "Å" "Å"
+		{ 0x1c6, 2, { 0x1c4, 0x1c5, } }, // "ǆ": "Ǆ" "ǅ"
+		{ 0x1c9, 2, { 0x1c7, 0x1c8, } }, // "ǉ": "Ǉ" "ǈ"
+		{ 0x1cc, 2, { 0x1ca, 0x1cb, } }, // "ǌ": "Ǌ" "ǋ"
+		{ 0x1f3, 2, { 0x1f1, 0x1f2, } }, // "ǳ": "Ǳ" "ǲ"
+		{ 0x392, 2, { 0x3b2, 0x3d0, } }, // "Β": "β" "ϐ"
+		{ 0x395, 2, { 0x3b5, 0x3f5, } }, // "Ε": "ε" "ϵ"
+		{ 0x398, 2, { 0x3b8, 0x3d1, } }, // "Θ": "θ" "ϑ"
+		{ 0x399, 3, { 0x345, 0x3b9, 0x1fbe, } }, // "Ι": "ͅ" "ι" "ι"
+		{ 0x39a, 2, { 0x3ba, 0x3f0, } }, // "Κ": "κ" "ϰ"
+		{ 0x39c, 2, { 0xb5, 0x3bc, } }, // "Μ": "µ" "μ"
+		{ 0x3a0, 2, { 0x3c0, 0x3d6, } }, // "Π": "π" "ϖ"
+		{ 0x3a1, 2, { 0x3c1, 0x3f1, } }, // "Ρ": "ρ" "ϱ"
+		{ 0x3a3, 2, { 0x3c3, 0x3c2, } }, // "Σ": "σ" "ς"
+		{ 0x3a6, 2, { 0x3c6, 0x3d5, } }, // "Φ": "φ" "ϕ"
+		{ 0x3b8, 2, { 0x398, 0x3f4, } }, // "θ": "Θ" "ϴ"
+		{ 0x3c9, 2, { 0x3a9, 0x2126, } }, // "ω": "Ω" "Ω"
+		{ 0x412, 2, { 0x432, 0x1c80, } }, // "В": "в" "ᲀ"
+		{ 0x414, 2, { 0x434, 0x1c81, } }, // "Д": "д" "ᲁ"
+		{ 0x41e, 2, { 0x43e, 0x1c82, } }, // "О": "о" "ᲂ"
+		{ 0x421, 2, { 0x441, 0x1c83, } }, // "С": "с" "ᲃ"
+		{ 0x422, 3, { 0x442, 0x1c84, 0x1c85, } }, // "Т": "т" "ᲄ" "ᲅ"
+		{ 0x42a, 2, { 0x44a, 0x1c86, } }, // "Ъ": "ъ" "ᲆ"
+		{ 0x462, 2, { 0x463, 0x1c87, } }, // "Ѣ": "ѣ" "ᲇ"
+		{ 0x1e60, 2, { 0x1e61, 0x1e9b, } }, // "Ṡ": "ṡ" "ẛ"
+@end iftangle
+		{ 0xa64a, 2, { 0x1c88, 0xa64b, } }, // "Ꙋ": "ᲈ" "ꙋ"
+		{ 0, 0, { 0 } },
+	};
+	int i, j, result;
+
+	// simple linear search, there's not a lot
+	for (i = 0; case_chars[i].the_char != 0; i++) {
+		if (case_chars[i].the_char == wc) {
+			// found it, add the alternatives
+			for (j = 0; j < case_chars[i].count; j++) {
+				result = charset_add_char(set, case_chars[i].alts[j]);
+				if (result != CSET_SUCCESS)
+					break;
+				*added = true;
+			}
+			return result;
+		}
+	}
+
+	return CSET_SUCCESS;
+}
+@
+
+For non-Unicode locales, we have to do an exhaustive search.
+Unfortunately, said exhaustive search differs if in a single-byte
+locale or a multibyte locale. First the single-byte case:
+
+@<case-ignoring function for 8-bit locales@>=
+/* add_case_variants_single_byte --- add the case variants in a single-byte locale */
+
+static int
+add_case_variants_single_byte(charset_t *set, int32_t wc, bool *added)
+{
+	int result;
+	int32_t converted_wc;
+	int (*to_this_case)(int wc) = NULL;
+
+	wc &= 0xff;		// for safety, don't allow sign extension
+	if (islower(wc))
+		to_this_case = tolower;
+	else
+		to_this_case = toupper;
+
+	for (int32_t i = 0; i <= 255; i++) {
+		converted_wc = to_this_case(i);		// if have upper, convert i to upper and compare
+		if (converted_wc == wc && i != wc) {
+			result = charset_add_char(set, i);	// add original lower case that we just found
+			if (result != CSET_SUCCESS)
+				return result;
+			*added = true;
+		}
+	}
+
+	return CSET_SUCCESS;
+}
+@
+
+@<case-ignoring function for non-Unicode@>=
+/* add_case_variants_non_utf --- add the case variants in a non-Unicode locale */
+
+static int
+add_case_variants_non_utf(charset_t *set, int32_t wc, int limit, bool *added)
+{
+	int result;
+	int32_t converted_wc;
+	wint_t (*to_this_case)(wint_t wc) = NULL;
+
+	if (iswlower(wc))
+		to_this_case = towlower;
+	else
+		to_this_case = towupper;
+
+	for (int32_t i = 0; i <= limit; i++) {
+		converted_wc = to_this_case(i);		// if have upper, convert i to upper and compare
+		if (converted_wc == wc && i != wc) {
+			result = charset_add_char(set, i);	// add original lower case that we just found
+			if (result != CSET_SUCCESS)
+				return result;
+			*added = true;
+		}
+	}
+
+	return CSET_SUCCESS;
+}
 @
 
 @node Adding Ranges
@@ -983,7 +1224,7 @@ The previous command runs for like 18 minutes! At three lines per equivalence:
 @example
 $ @kbd{wc -l OUT}
 23208 OUT
-$ @kbd{hp 23208 3}
+$ @kbd{hp 23208 3 /}
 7736.000000
 @end example
 
@@ -1078,7 +1319,7 @@ static const struct equiv {
 	int32_t		equivs[200];
 } equiv_table[] = {
 @ifweave
-	@dots{}
+	...
 @end ifweave
 @iftangle
 	{ 0x30, 72, { 0x660, 0x6f0, 0x7c0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xc78, 0xce6, 0xd66, 0xde6, 0xe50, 0xed0, 0xf20, 0xf33, 0x1040, 0x1090, 0x17e0, 0x17f0, 0x1810, 0x1946, 0x19d0, 0x1a80, 0x1a90, 0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0x2070, 0x2080, 0x2189, 0x24ea, 0x24ff, 0x3007, 0x3358, 0xa620, 0xa8d0, 0xa900, 0xa9d0, 0xa9f0, 0xaa50, 0xabf0, 0xff10, 0x1018a, 0x104a0, 0x11066, 0x110f0, 0x11136, 0x111d0, 0x112f0, 0x11450, 0x114d0, 0x11650, 0x116c0, 0x11730, 0x118e0, 0x11c50, 0x16a60, 0x16b50, 0x1d7ce, 0x1d7d8, 0x1d7e2, 0x1d7ec, 0x1d7f6, 0x1e950, 0x1f100, 0x1f101, 0x1f10b, 0x1f10c, } },
@@ -1516,7 +1757,7 @@ static const struct ref {
 } ref_table[] = {
 	{ 0x61, 0x41 },
 @ifweave
-	@dots{}
+	...
 @end ifweave
 @iftangle
 	{ 0x62, 0x42 },
@@ -11383,32 +11624,29 @@ parse_bracket_expr(const char *expr, int flags, int *errcode)
 				*errcode = CSET_ERANGE;
 				goto fail;
 			}
-			result = charset_add_range(bracket_expr, first_wc, second_wc);
-			@<check for failure@>
 
 			if (ignore_case) {
-				if (iswlower(first_wc) && iswlower(second_wc))
-					result = charset_add_range(bracket_expr, towupper(first_wc), towupper(second_wc));
-				else if (iswupper(first_wc) && iswupper(second_wc))
-					result = charset_add_range(bracket_expr, towlower(first_wc), towlower(second_wc));
-				@<check for failure@>
+				for (wint_t i = first_wc; i <= second_wc; i++) {
+					result = charset_add_char_ic(bracket_expr, i);
+					@<check for failure@>
+				}
+			} else {
+				result = charset_add_range(bracket_expr, first_wc, second_wc);
 			}
+			@<check for failure@>
 
 			continue;
 		}
 
 	push_wchar:
 		// push cur_wchar onto wide character list
-		result = charset_add_char(bracket_expr, cur_wchar);
-		@<check for failure@>
 
 		if (ignore_case) {
-			if (iswlower(cur_wchar))
-				result = charset_add_char(bracket_expr, towupper(cur_wchar));
-			else if (iswupper(cur_wchar))
-				result = charset_add_char(bracket_expr, towlower(cur_wchar));
-			@<check for failure@>
+			result = charset_add_char_ic(bracket_expr, cur_wchar);
+		} else {
+			result = charset_add_char(bracket_expr, cur_wchar);
 		}
+		@<check for failure@>
 	}
 
 	if (cur_wchar != L']') {
@@ -11643,10 +11881,7 @@ if (cur_wchar == L'=') {
 	result = charset_add_equiv(bracket_expr, the_wc);
 	@<check for failure@>
 	if (ignore_case) {
-		if (iswlower(the_wc))
-			result = charset_add_equiv(bracket_expr, towupper(the_wc));
-		else if (iswupper(the_wc))
-			result = charset_add_equiv(bracket_expr, towlower(the_wc));
+		result = charset_add_char_ic(bracket_expr, the_wc);
 		@<check for failure@>
 	}
 
@@ -11683,10 +11918,7 @@ if (cur_wchar == L'.') {
 	@<check for failure@>
 
 	if (ignore_case) {
-		if (iswlower(the_wc))
-			result = charset_add_char(bracket_expr, towupper(the_wc));
-		else if (iswupper(the_wc))
-			result = charset_add_char(bracket_expr, towlower(the_wc));
+		result = charset_add_char_ic(bracket_expr, the_wc);
 		@<check for failure@>
 	}
 
