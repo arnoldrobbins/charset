@@ -505,9 +505,6 @@ add a character and its upper- and lower-case variants.
 @<API functions@>=
 /* charset_add_char_ic --- add a single wide character to the set, and its case alternatives */
 
-@iftangle
-@<disable @code{-Wunused-function}@>
-@end iftangle
 Static int
 charset_add_char_ic(charset_t *set, int32_t wc)
 {
@@ -538,19 +535,10 @@ charset_add_char_ic(charset_t *set, int32_t wc)
 
 	return result1;
 }
-@iftangle
-@<enable @code{-Wunused-function}@>
-@end iftangle
 @
 
 @<API declarations@>=
-@iftangle
-@<disable @code{-Wunused-function}@>
-@end iftangle
 Static int charset_add_char_ic(charset_t *set, int32_t wc);
-@iftangle
-@<enable @code{-Wunused-function}@>
-@end iftangle
 @
 
 @node Adding Ranges

@@ -1,3 +1,8 @@
+2026-03-24         Arnold D. Robbins     <arnold@skeeve.com>
+
+	* charset.twjr: Remove the #pragma statements for unused
+	diagnostics for charset_add_char_ic().
+
 2026-03-23         Arnold D. Robbins     <arnold@skeeve.com>
 
 	* charset.twjr: Rename mb_cur_max member to locale_is_8bit.
